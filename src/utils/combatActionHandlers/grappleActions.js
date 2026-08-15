@@ -8,7 +8,6 @@ import {
   grapplerPushOff,
   defenderPushBreak,
   defenderReversal,
-  applyDamageWithArmor,
   isWeaponGrappleSuitable,
 } from "../grapplingSystem.js";
 import { getCombinedGrappleModifiers } from "../sizeStrengthModifiers.js";
@@ -40,6 +39,7 @@ import {
   recoverCombatStamina as recoverCanonicalCombatStamina,
   spendCombatStamina as spendCanonicalCombatStamina,
 } from "../combatStamina.js";
+import { applyCanonicalGrappleImpact } from "../combat/canonicalGrappleImpact.js";
 
 // Debug flag for grapple system
 const DEBUG_GRAPPLE = false;
@@ -249,6 +249,7 @@ export function executeAdmittedGrappleResolution({
     getFighters,
     setFighters,
     setPositions,
+    clampHP,
     getFighterHP,
     applyHPToFighter,
     onPostHpMutation,
@@ -265,6 +266,9 @@ export function executeAdmittedGrappleResolution({
     turnCounter,
     spendCanonicalGrappleStamina,
     recoverCanonicalGrappleStamina,
+    resolvedCanonicalEffectKeys,
+    combatSession,
+    turnToken,
     automatedControl = false,
   } = context;
 
@@ -335,8 +339,6 @@ export function executeAdmittedGrappleResolution({
     initialLiveFighters.find(f => f.id === defenderId) || {}
   );
   attacker = attackerInArray;
-  const attackerStaminaBefore = snapshotCanonicalStaminaAuthority(attackerInArray || attacker);
-  const defenderStaminaBefore = snapshotCanonicalStaminaAuthority(defender || {});
   let canonicalStaminaSpend = {
     accepted: true,
     reason: "grapple-stamina-not-required",
@@ -1113,23 +1115,20 @@ export function executeAdmittedGrappleResolution({
     throw error;
   }
 
-  // The legacy grapple engine mutates fatigueState directly. Restore the
-  // canonical combat-stamina authority before any result object is merged back
-  // into the authoritative roster.
+  // Milestone 8D Phase 6: the low-level grapple engine no longer mutates
+  // stamina, so no snapshot restoration is required. Propagate the canonical
+  // spend/recovery result forward so the roster merge carries the
+  // authoritative post-spend stamina.
   const actorAuthoritySource = snapshotCanonicalStaminaAuthority(
     canonicalStaminaRecovery?.updated ||
     canonicalStaminaSpend?.updated ||
     getLiveFighters()?.find?.((fighter) => fighter.id === attacker.id) ||
-    attackerStaminaBefore,
+    attacker,
   );
-  const defenderAuthoritySource = defenderStaminaBefore;
+  const defenderAuthorityObserved = snapshotCanonicalStaminaAuthority(defender || {});
   Object.assign(attacker, applyCanonicalStaminaAuthority(attacker, actorAuthoritySource));
-  Object.assign(defender, applyCanonicalStaminaAuthority(defender, defenderAuthoritySource));
   if (result?.attacker) {
     result.attacker = applyCanonicalStaminaAuthority(result.attacker, actorAuthoritySource);
-  }
-  if (result?.defender) {
-    result.defender = applyCanonicalStaminaAuthority(result.defender, defenderAuthoritySource);
   }
   addLog?.({
     audience: "developer",
@@ -1150,13 +1149,14 @@ export function executeAdmittedGrappleResolution({
       actionType,
       actorCanonicalStamina: actorAuthoritySource.currentStamina,
       actorCompatibilityStamina: attacker.fatigueState?.currentStamina ?? null,
-      opponentCanonicalStamina: defenderAuthoritySource.currentStamina,
+      opponentCanonicalStamina: defenderAuthorityObserved.currentStamina,
       opponentCompatibilityStamina: defender.fatigueState?.currentStamina ?? null,
       actorMatches:
         Number(actorAuthoritySource.currentStamina) === Number(attacker.fatigueState?.currentStamina),
       opponentMatches:
-        Number(defenderAuthoritySource.currentStamina) === Number(defender.fatigueState?.currentStamina),
-      legacyDrainNeutralized: true,
+        Number(defenderAuthorityObserved.currentStamina) === Number(defender.fatigueState?.currentStamina),
+      legacyDrainRemoved: true,
+      snapshotRestorationRemoved: true,
     },
   }, "debug");
 
@@ -1287,19 +1287,30 @@ export function executeAdmittedGrappleResolution({
             (typeof resolveGrappleHitLocation === "function"
               ? resolveGrappleHitLocation({ attacker, defender: defenderCopy, result, weapon: selectedGrappleWeapon })
               : "torso");
-          armorContactOutcome = resolveArmorContact({
-            attacker,
-            defender: defenderCopy,
-            weapon: selectedGrappleWeapon,
-            attackData: selectedGrappleWeapon,
-            attackMode: selectedGrappleAttackMode || selectedGrappleWeapon.attackMode,
-            attackRoll: result.attackRoll,
-            attackTotal: result.attackRoll,
-            critical: result.critical === true,
-            hitLocation,
-            targetState: { grappled: true, pinned: attacker.grappleState?.groundControl?.state === "pinned" },
-            normalDefense: defenderCopy.guardRating ?? defenderCopy.armorClass ?? 12,
-          });
+          try {
+            armorContactOutcome = resolveArmorContact({
+              attacker,
+              defender: defenderCopy,
+              weapon: selectedGrappleWeapon,
+              attackData: selectedGrappleWeapon,
+              attackMode: selectedGrappleAttackMode || selectedGrappleWeapon.attackMode,
+              attackRoll: result.attackRoll,
+              attackTotal: result.attackRoll,
+              critical: result.critical === true,
+              hitLocation,
+              targetState: { grappled: true, pinned: attacker.grappleState?.groundControl?.state === "pinned" },
+              normalDefense: defenderCopy.guardRating ?? defenderCopy.armorClass ?? 12,
+            });
+          } catch (error) {
+            armorContactOutcome = {
+              accepted: false,
+              reason: "grapple-armor-processing-failed",
+              error,
+              damageAllowed: false,
+              damagePrevented: true,
+              hitLocation,
+            };
+          }
           const damageBeforeContact = Number(result.damage || 0) || 0;
           const contactAllowsDamage = armorContactOutcome.damageAllowed === true;
           result.armorContactResolved = armorContactOutcome;
@@ -1309,9 +1320,6 @@ export function executeAdmittedGrappleResolution({
           result.armorBlockedWeakSpot =
             armorContactOutcome.contactType === "solid-plate" ||
             armorContactOutcome.damagePrevented === true;
-          if (!contactAllowsDamage) {
-            result.damage = 0;
-          }
           if (armorContactOutcome.gapReached === true) {
             addLog(
               `${attackerLabel} slips through a gap in ${damageTargetLabel}'s armor with ${selectedGrappleWeapon.name}.`,
@@ -1354,8 +1362,67 @@ export function executeAdmittedGrappleResolution({
           }, "debug");
         }
         
-        // Use applyDamageWithArmor to handle armor logic
-        const updatedDefender = applyDamageWithArmor(result, attacker, defenderCopy);
+        const canonicalImpact = applyCanonicalGrappleImpact({
+          fighters: updated,
+          attacker,
+          defender: defenderCopy,
+          result,
+          actionType,
+          weapon: selectedGrappleWeapon,
+          attackMode: selectedGrappleAttackMode,
+          hitLocation: result.hitLocation || "torso",
+          armorContact: armorContactOutcome,
+          executionKey: grappleActionId,
+          combatSession,
+          turnToken,
+          resolvedKeys: resolvedCanonicalEffectKeys,
+          originControlMode: automatedControl ? "ai" : "manual",
+          authorities: {
+            clampHP,
+            getFighterHP,
+            applyHPToFighter,
+          },
+        });
+        for (const logEvent of canonicalImpact.logs || []) {
+          if (logEvent?.audience === "developer") addLog?.(logEvent, logEvent.type || "debug");
+        }
+        armorContactOutcome = canonicalImpact.protection?.contact || armorContactOutcome;
+        if (canonicalImpact.protection) {
+          result.armorContactResolved = armorContactOutcome;
+          result.hitLocation =
+            canonicalImpact.protection.hitLocation?.location ||
+            result.hitLocation ||
+            "torso";
+        }
+        if (!canonicalImpact.accepted) {
+          result.damage = 0;
+          result.impactRejected = true;
+          result.impactRejectionReason = canonicalImpact.reason;
+          addLog?.({
+            audience: "developer",
+            channel: "validation",
+            eventType: "canonical-grapple-impact-rejected",
+            level: "error",
+            type: "error",
+            actorId: attacker.id,
+            targetId: defenderCopy.id,
+            executionKey: grappleActionId,
+            source: "grapple-impact-application",
+            message:
+              `canonical grapple impact rejected: actor=${attacker.name} target=${defenderCopy.name} ` +
+              `actionType=${actionType} reason=${canonicalImpact.reason}; HP mutation blocked`,
+            data: {
+              actionType,
+              weapon: selectedGrappleWeapon?.name || "Takedown Impact",
+              hitLocation: result.hitLocation || "torso",
+              reason: canonicalImpact.reason,
+            },
+          }, "error");
+        }
+        const canonicalRoster = canonicalImpact.accepted ? canonicalImpact.fighters : updated;
+        const updatedDefender =
+          canonicalRoster.find((fighter) => fighter.id === damageTargetId) ||
+          defenderCopy;
         
         if (DEBUG_GRAPPLE) {
           console.log(
@@ -1409,7 +1476,7 @@ export function executeAdmittedGrappleResolution({
             );
           } else {
             addLog(
-              `Ã°Å¸â€ºÂ¡Ã¯Â¸Â ${damageTargetLabel}'s armor absorbs the blow from ${attackerLabel}! (Armor armorDurability damaged: ${result.damage})`,
+              `Ã°Å¸â€ºÂ¡Ã¯Â¸Â ${damageTargetLabel}'s armor absorbs the blow from ${attackerLabel}!`,
               "info"
             );
           }
@@ -1419,14 +1486,14 @@ export function executeAdmittedGrappleResolution({
           addLog(`${damageTargetLabel} collapses and can no longer fight.`, "warning");
         }
 
-        // Check for death blow
-        if (result.deathBlow) {
-          applyHPToFighter(updatedDefender, -999);
+        // Death blows are included in the single canonical HP mutation above.
+        if (result.deathBlow && canonicalImpact.accepted) {
           updatedDefender.isDead = true;
           addLog(`Ã°Å¸â€™â‚¬ ${damageTargetLabel} is slain by death blow!`, "error");
         }
         
         // Update fighter state
+        updated.splice(0, updated.length, ...canonicalRoster);
         updated[defenderIndex] = updatedDefender;
         nextDefender = nextDefender
           ? { ...nextDefender, ...updatedDefender }

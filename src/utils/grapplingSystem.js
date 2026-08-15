@@ -11,7 +11,9 @@
  * - grappled: Character is being held/pinned
  */
 
-import { drainStamina, STAMINA_COSTS } from "./combatFatigueSystem.js";
+// Milestone 8D Phase 6: stamina is owned exclusively by the canonical grapple
+// admission (spendCombatStamina). Low-level grapple mechanics resolve the
+// contest/mechanical result only and must not debit stamina, even transiently.
 import {
   getCombinedGrappleModifiers,
   getSizeCategory,
@@ -20,7 +22,6 @@ import {
   getLeveragePenalty,
   canCarryTarget,
 } from "./sizeStrengthModifiers.js";
-import { calculateArmorDamage } from "./equipmentManager.js";
 import {
   linkCombinedBodies,
   COMBINED_ROLES,
@@ -108,7 +109,6 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
   const preRollSizeOutcome = assessGrappleSizeOutcome(attacker, defender);
 
   if (preRollSizeOutcome.outcome === "blocked") {
-    drainStamina(attacker, STAMINA_COSTS.NORMAL_COMBAT, 1);
     return {
       success: false,
       reason: `${defender.name} is too large and powerful for ${attacker.name} to grapple effectively.`,
@@ -124,7 +124,6 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
 
     if (defenderRoll === 20) {
       // Defender escapes with natural 20
-      drainStamina(attacker, STAMINA_COSTS.NORMAL_COMBAT, 1);
       return {
         success: false,
         reason: `${defender.name} miraculously avoids grapple with natural 20!`,
@@ -145,9 +144,6 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
         };
         grappleResult.defender.grappleState.canUseLongWeapons = false;
 
-        drainStamina(grappleResult.attacker, STAMINA_COSTS.GRAPPLING, 1);
-        drainStamina(grappleResult.defender, STAMINA_COSTS.GRAPPLING, 1);
-
         return {
           success: true,
           message: `${attacker.name} automatically grapples ${defender.name} (strength advantage too great)!`,
@@ -161,7 +157,6 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
         };
       } else {
         // Failed to initiate grapple (distance issue)
-        drainStamina(attacker, STAMINA_COSTS.NORMAL_COMBAT, 1);
         return {
           success: false,
           reason: grappleResult.reason,
@@ -214,7 +209,6 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
     const sizeOutcome = assessGrappleSizeOutcome(attacker, defender, { rollMargin });
 
     if (sizeOutcome.outcome === "blocked") {
-      drainStamina(attacker, STAMINA_COSTS.NORMAL_COMBAT, 1);
       return {
         success: false,
         reason: `${defender.name} is too large and powerful for ${attacker.name} to grapple effectively.`,
@@ -255,10 +249,6 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
         grappleResult.defender.grappleState.canUseLongWeapons = false;
       }
 
-      // Drain stamina (grappling costs 2x)
-      drainStamina(grappleResult.attacker, STAMINA_COSTS.GRAPPLING, 1);
-      drainStamina(grappleResult.defender, STAMINA_COSTS.GRAPPLING, 1);
-
       return {
         success: true,
         message:
@@ -276,7 +266,6 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
       };
     } else {
       // Failed to initiate grapple (distance issue)
-      drainStamina(attacker, STAMINA_COSTS.NORMAL_COMBAT, 1);
       return {
         success: false,
         reason: grappleResult.reason,
@@ -287,8 +276,6 @@ export function attemptGrapple(attacker, defender, rollDice = null, attackerPos 
     }
   } else {
     // Failed to grapple
-    drainStamina(attacker, STAMINA_COSTS.NORMAL_COMBAT, 1);
-
     return {
       success: false,
       reason: `${attacker.name} fails to grapple ${defender.name} (${attackRoll} vs ${defendRoll})`,
@@ -343,10 +330,6 @@ export function maintainGrapple(attacker, defender, rollDice = null) {
 
   // roundsInGrapple is advanced once per surviving melee round by the
   // CombatPage relationship synchronizer, not once per maintain action.
-
-  // Drain stamina for both (grappling costs 2x)
-  drainStamina(attacker, STAMINA_COSTS.GRAPPLING, 1);
-  drainStamina(defender, STAMINA_COSTS.GRAPPLING, 1);
 
   if (attackerRoll > defenderRoll) {
     // Maintains hold
@@ -450,10 +433,6 @@ export function performTakedown(attacker, defender, rollDice = null) {
     total: takedownRoll,
     dc: 15,
   };
-
-  // Drain stamina
-  drainStamina(attacker, STAMINA_COSTS.GRAPPLING, 1);
-  drainStamina(defender, STAMINA_COSTS.GRAPPLING, 1);
 
   if (takedownRoll >= 15) {
     // Successful takedown
@@ -657,11 +636,6 @@ export function groundAttack(
     attackerGrapple.state === GRAPPLE_STATES.GROUND ||
     defenderGrapple.state === GRAPPLE_STATES.GRAPPLED;
 
-  // Grappling is tiring, especially in armor
-  drainStamina(attacker, STAMINA_COSTS.GRAPPLING, 1);
-  // Defender also struggles and loses a bit of stamina
-  drainStamina(defender, STAMINA_COSTS.GRAPPLING, 0.5);
-
   // Dagger crit range: 19Ã¢â‚¬â€œ20, otherwise 20
   const daggerCritRange = isCloseBlade ? 19 : 20;
   const isCritical = naturalRoll >= daggerCritRange;
@@ -837,9 +811,6 @@ export function breakFree(character, opponent, rollDice = null) {
   }
   const characterRoll = characterRollBreakdown.total;
   const opponentRoll = opponentRollBreakdown.total;
-
-  // Drain stamina (attempting to break free costs stamina)
-  drainStamina(character, STAMINA_COSTS.GRAPPLING, 1);
 
   if (characterRoll > opponentRoll) {
     // Successfully breaks free
@@ -1067,101 +1038,15 @@ export function getPreferredEngagementRange(fighter, target) {
 }
 
 /**
- * Apply damage with armor consideration for grapple attacks
- * Handles ignoresArmor flag for critical hits and death blows (weak points in armor)
- * @param {Object} result - Result object from groundAttack with ignoresArmor flag
- * @param {Object} attacker - Attacking character
- * @param {Object} defender - Defending character
- * @returns {Object} Updated defender object with damage applied
+ * Deprecated compatibility signature. Active grapple impacts must use
+ * applyCanonicalGrappleImpact so armor/contact and HP ownership cannot diverge.
+ * This shim deliberately fails closed instead of reconstructing HP aliases.
  */
-export function applyDamageWithArmor(result, attacker, defender) {
-  const damage = result.damage || 0;
-  if (damage <= 0) return defender;
-
-  const defenderCopy = { ...defender };
-
-  // 1) If this is a "weak point" hit (crit/Death Blow in grapple)
-  if (result.ignoresArmor) {
-    // Skip guardRating and armor armorDurability; go straight to body (chink in armor)
-    // Apply to armorDurability first, then overflow to HP
-    const currentarmorDurability = defenderCopy.currentarmorDurability ?? defenderCopy.armorDurability ?? 0;
-    const newarmorDurability = Math.max(0, currentarmorDurability - damage);
-
-    defenderCopy.currentarmorDurability = newarmorDurability;
-    defenderCopy.armorDurability = newarmorDurability;
-
-    if (damage > currentarmorDurability) {
-      const overflow = damage - currentarmorDurability;
-      const currentHP = defenderCopy.currentHP ?? defenderCopy.hp ?? defenderCopy.HP ?? 0;
-      const newHP = Math.max(0, currentHP - overflow);
-      
-      defenderCopy.currentHP = newHP;
-      defenderCopy.hp = newHP;
-      if (defenderCopy.HP !== undefined) {
-        defenderCopy.HP = newHP;
-      }
-    }
-
-    return defenderCopy;
-  }
-
-  // 2) Normal hit: apply armor logic using existing calculateArmorDamage function
-  try {
-    const nat = result.naturalRoll;
-    const atkTotal = result.attackRoll || result.naturalRoll || 12;
-    const armorResult = calculateArmorDamage(
-      defenderCopy,
-      atkTotal,
-      damage,
-      null, // No specific slot targeted in grapple
-      { isCrit: nat === 20, isFumble: nat === 1 }
-    );
-
-    if (armorResult.armorHit) {
-      // Armor absorbed the hit - update armor armorDurability
-      // The calculateArmorDamage function already modifies the armor object
-      // We just need to ensure the defender's equistaminad armor is updated
-      if (armorResult.brokenArmor && armorResult.brokenArmor.length > 0) {
-        // Armor pieces were broken - this is already handled in calculateArmorDamage
-        // but we can add logging here if needed
-      }
-      // Damage was absorbed by armor, no character damage
-      return defenderCopy;
-    } else {
-      // Armor didn't block, damage goes to character armorDurability/HP
-      const damageToCharacter = armorResult.damageToCharacter || damage;
-      const currentarmorDurability = defenderCopy.currentarmorDurability ?? defenderCopy.armorDurability ?? 0;
-      const newarmorDurability = Math.max(0, currentarmorDurability - damageToCharacter);
-
-      defenderCopy.currentarmorDurability = newarmorDurability;
-      defenderCopy.armorDurability = newarmorDurability;
-
-      if (damageToCharacter > currentarmorDurability) {
-        const overflow = damageToCharacter - currentarmorDurability;
-        const currentHP = defenderCopy.currentHP ?? defenderCopy.hp ?? defenderCopy.HP ?? 0;
-        const newHP = Math.max(0, currentHP - overflow);
-        
-        defenderCopy.currentHP = newHP;
-        defenderCopy.hp = newHP;
-        if (defenderCopy.HP !== undefined) {
-          defenderCopy.HP = newHP;
-        }
-      }
-    }
-  } catch (error) {
-    // Armor system not available, apply damage directly to HP
-    console.warn("Armor damage calculation failed, applying direct damage:", error);
-    const currentHP = defenderCopy.currentHP ?? defenderCopy.hp ?? defenderCopy.HP ?? 0;
-    const newHP = Math.max(0, currentHP - damage);
-    
-    defenderCopy.currentHP = newHP;
-    defenderCopy.hp = newHP;
-    if (defenderCopy.HP !== undefined) {
-      defenderCopy.HP = newHP;
-    }
-  }
-
-  return defenderCopy;
+export function applyDamageWithArmor(_result, _attacker, defender) {
+  console.warn(
+    "applyDamageWithArmor is deprecated; grapple impact was not applied outside canonical authority",
+  );
+  return defender;
 }
 
 /**

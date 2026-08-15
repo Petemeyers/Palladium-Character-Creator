@@ -5,6 +5,7 @@ import {
   canExecuteMovementCommand,
   getMovementTargetingButtonState,
   getMovementCommandPreview,
+  resolveManualGroundMovementActionBudget,
 } from "../src/utils/combatMovementCommand.js";
 
 const hasFunction = (value) => {
@@ -179,5 +180,33 @@ assert.equal(hasFunction(result), false, "movement result contains no functions"
 
 assert.equal(JSON.stringify(actor), actorSnapshot, "movement helper does not mutate actor");
 assert.equal(JSON.stringify(target), targetSnapshot, "movement helper does not mutate target");
+
+const walkBudget = resolveManualGroundMovementActionBudget({
+  movementMode: "walk",
+  remainingActions: 5,
+});
+assert.equal(walkBudget.fullCommitment, false);
+assert.equal(walkBudget.partOfCombinedAction, false);
+assert.equal(walkBudget.actionCost, 1);
+assert.equal(walkBudget.finalizeAfterMovement, true);
+
+const runBudget = resolveManualGroundMovementActionBudget({
+  movementMode: "run",
+  remainingActions: 5,
+});
+assert.equal(runBudget.fullCommitment, true);
+assert.equal(runBudget.partOfCombinedAction, false);
+assert.equal(runBudget.actionCost, 5);
+assert.equal(runBudget.finalizeAfterMovement, true);
+
+const chargeBudget = resolveManualGroundMovementActionBudget({
+  movementMode: "charge",
+  remainingActions: 5,
+});
+assert.equal(chargeBudget.fullCommitment, false, "Charge must not consume the full remaining action budget");
+assert.equal(chargeBudget.partOfCombinedAction, true);
+assert.equal(chargeBudget.actionCost, 0, "Charge movement defers the combined action spend to attack follow-through");
+assert.equal(chargeBudget.finalizeAfterMovement, false, "Charge movement must not finalize the turn");
+assert.equal(chargeBudget.blocksAfterPriorMovement, true);
 
 console.log("combat movement command tests passed");

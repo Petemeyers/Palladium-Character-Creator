@@ -179,6 +179,7 @@ export function mirrorCombatStaminaCompatibilityFields(fighter = {}, value, maxV
     currentstamina: currentStamina,
     staminaAuthority: "combat-stamina",
     staminaCurrent: currentStamina,
+    ...(Object.hasOwn(fighter, "stamina") ? { stamina: currentStamina } : {}),
     combatStamina: {
       ...(fighter.combatStamina || {}),
       maxStamina,

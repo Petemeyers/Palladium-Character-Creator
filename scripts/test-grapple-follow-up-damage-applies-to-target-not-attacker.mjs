@@ -5,11 +5,13 @@ const source = readFileSync(new URL("../src/utils/combatActionHandlers/grappleAc
 
 assert.match(source, /const damageTargetId = defender\?\.id \?\? defenderId/);
 assert.match(source, /const defenderIndex = updated\.findIndex\(f => f\.id === damageTargetId\)/);
-assert.match(source, /const updatedDefender = applyDamageWithArmor\(result, attacker, defenderCopy\)/);
+assert.match(source, /const canonicalImpact = applyCanonicalGrappleImpact\(\{/);
+assert.match(source, /defender: defenderCopy/);
+assert.match(source, /targetId: defenderCopy\.id/);
 assert.match(source, /updated\[defenderIndex\] = updatedDefender/);
 assert.doesNotMatch(
   source,
-  /const attackerIndex = updated\.findIndex[\s\S]{0,160}applyDamageWithArmor\(result, attacker/,
+  /applyCanonicalGrappleImpact\(\{[\s\S]{0,320}defender:\s*attacker/,
   "grapple follow-up damage must not be applied through attackerIndex",
 );
 

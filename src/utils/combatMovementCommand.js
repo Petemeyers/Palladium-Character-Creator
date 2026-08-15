@@ -40,6 +40,41 @@ const getDistance = (from, to) => {
   return Math.max(dx, dy) * 5;
 };
 
+export function resolveManualGroundMovementActionBudget({
+  movementMode,
+  remainingActions = 0,
+} = {}) {
+  const mode = String(movementMode || "walk").toLowerCase();
+  if (mode === "charge") {
+    return {
+      movementMode: "charge",
+      partOfCombinedAction: true,
+      fullCommitment: false,
+      actionCost: 0,
+      finalizeAfterMovement: false,
+      blocksAfterPriorMovement: true,
+    };
+  }
+  if (mode === "run" || mode === "sprint") {
+    return {
+      movementMode: mode,
+      partOfCombinedAction: false,
+      fullCommitment: true,
+      actionCost: Math.max(1, Number(remainingActions) || 1),
+      finalizeAfterMovement: true,
+      blocksAfterPriorMovement: true,
+    };
+  }
+  return {
+    movementMode: mode || "walk",
+    partOfCombinedAction: false,
+    fullCommitment: false,
+    actionCost: 1,
+    finalizeAfterMovement: true,
+    blocksAfterPriorMovement: false,
+  };
+}
+
 export function getMovementCommandPreview({ actor, action, selectedTarget } = {}) {
   const mode = cleanText(action?.type, "move").toLowerCase();
   const movementMode = MOVEMENT_MODES.has(mode) ? mode : "move";
@@ -148,4 +183,5 @@ export default {
   canExecuteMovementCommand,
   getMovementTargetingButtonState,
   getMovementCommandPreview,
+  resolveManualGroundMovementActionBudget,
 };

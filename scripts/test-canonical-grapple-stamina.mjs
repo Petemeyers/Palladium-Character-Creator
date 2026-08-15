@@ -144,8 +144,18 @@ assert.ok(
   "post-action stamina authority audit must exist",
 );
 assert.ok(
-  grappleSource.includes("legacyDrainNeutralized: true"),
-  "legacy grapple drain must be explicitly neutralized",
+  grappleSource.includes("legacyDrainRemoved: true"),
+  "audit event must report that the legacy grapple drain has been removed",
+);
+assert.ok(
+  grappleSource.includes("snapshotRestorationRemoved: true"),
+  "audit event must report that stamina snapshot restoration has been removed",
+);
+const grapplingSystemPath = path.resolve(here, "../src/utils/grapplingSystem.js");
+const grapplingSystemSource = fs.readFileSync(grapplingSystemPath, "utf8");
+assert.ok(
+  !grapplingSystemSource.includes("drainStamina"),
+  "low-level grapplingSystem must not contain any legacy stamina drain",
 );
 assert.ok(
   grappleSource.includes(

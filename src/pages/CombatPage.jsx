@@ -85,13 +85,24 @@ import {
   adaptSelectableActorToCombatant,
   getSelectableActorAttackForDistance,
 } from "../utils/selectableActorAdapter.js";
+import { buildCombatActionCatalog } from "../utils/combatActionCatalog.js";
+import { resolveBracedCounterDefenderWeapon } from "../utils/combat/bracedCounterWeaponLookup.js";
 import {
   applyCanonicalCombatEffect,
 } from "../utils/combat/applyCanonicalCombatEffect.js";
+import { applyCanonicalGrappleImpact } from "../utils/combat/canonicalGrappleImpact.js";
 import {
   isCanonicalResolvedEffectEvent,
 } from "../utils/combat/canonicalResolvedCombatEffect.js";
+import {
+  PHASE2E_BRACED_COUNTER_FIXTURE,
+  applyExplicitDeploymentPositions,
+  assertFixtureLiveState,
+  flattenDeploymentPositions,
+  summarizeFighter,
+} from "../utils/combat/phase2eBracedCounterFixture.js";
 import { PHASE3_CANONICAL_EFFECT_FIXTURE } from "../utils/combat/phase3CanonicalEffectFixture.js";
+import { applyCanonicalCatalogMovementStaminaSpend } from "../utils/combat/chargeCombinedActionStamina.js";
 import CombatActionsPanel from "../components/CombatActionsPanel.jsx";
 import EncounterReadinessPanel from "../components/EncounterReadinessPanel.jsx";
 import InitiativeSetupPreview from "../components/InitiativeSetupPreview.jsx";
@@ -149,7 +160,10 @@ import {
   getCommandCenterAttackGate,
   getLegacyManualTurnOrderGate,
 } from "../utils/combatCommandParity.js";
-import { canExecuteMovementCommand } from "../utils/combatMovementCommand.js";
+import {
+  canExecuteMovementCommand,
+  resolveManualGroundMovementActionBudget,
+} from "../utils/combatMovementCommand.js";
 import {
   commandBlockedLog,
   commandCompletedLog,
@@ -1134,7 +1148,6 @@ import {
   resetGrapple,
   canUseWeaponInGrapple,
   getPreferredEngagementRange,
-  applyDamageWithArmor,
   initiateGrapple,
   breakGrappleWithPush,
   breakGrappleWithTrip,
@@ -5685,6 +5698,7 @@ function CombatPage({ characters = [] }) {
   const justCreatedPendingMovementRef = useRef(new Set()); // Track movements created this turn (don't apply until NEXT turn)
   const handleEnemyTurnRef = useRef(null); // Store latest version of handleEnemyTurn to avoid dependency loops
   const attackRef = useRef(null); // Store attack function to avoid initialization order issues
+  const createAttackExecutionKeyRef = useRef(null);
   const handlePositionChangeRef = useRef(null);
   const pendingManualWeaponEntryTechniqueRef = useRef(null);
   const executeCanonicalGrappleActionRef = useRef(null);
@@ -14669,12 +14683,21 @@ function CombatPage({ characters = [] }) {
       return { ok: false, message };
     }
 
+    const chargeTarget = selectedTarget || commandCatalogTargets[0] || null;
+    const chargeBudget = resolveManualGroundMovementActionBudget({
+      movementMode: mode,
+      remainingActions: currentTurnEntry?.remainingActions ?? actor?.remainingActions,
+    });
     pendingSelectedMovementCommandRef.current = {
       actorId: actor.id,
       actionName: action?.name || (mode === "run" ? "Run" : mode === "charge" ? "Charge" : "Walk"),
       actionType: mode,
-      actionCost: Number(action?.costActions ?? 1) || 1,
+      actionCost: chargeBudget.partOfCombinedAction
+        ? 0
+        : Number(action?.costActions ?? 1) || 1,
       staminaCost: Number(action?.costStamina ?? 0) || 0,
+      partOfCombinedAction: chargeBudget.partOfCombinedAction === true,
+      followThroughTargetId: chargeBudget.partOfCombinedAction ? (chargeTarget?.id || null) : null,
     };
     manualMovementRequestActiveRef.current = true;
     manualMovementRequestIdRef.current += 1;
@@ -14732,28 +14755,34 @@ function CombatPage({ characters = [] }) {
         fatigueLabel: liveFighter.fatigueLabel,
       };
       if (staminaCost > 0) {
-        staminaResult = spendStamina(liveFighter, staminaCost);
-        if (!staminaResult.ok) {
+        const movementSpend = applyCanonicalCatalogMovementStaminaSpend({
+          fighter: liveFighter,
+          amount: staminaCost,
+          spend: spendCombatStamina,
+          reason: "movement",
+          source: pending.partOfCombinedAction ? "charge-catalog-movement" : `${pending.actionType || "movement"}-catalog`,
+          executionKey: [
+            combatSessionRef.current || "session",
+            "movement-catalog",
+            actorId,
+            pending.actionType || "move",
+          ].join(":"),
+        });
+        if (!movementSpend.accepted) {
           const message = "Movement completed, but no stamina was available to spend.";
           pendingSelectedMovementCommandRef.current = null;
           setSelectedMovementCommandResult({ ok: false, status: "moved", message });
           addLog(commandBlockedLog({ action: pending.actionName, reason: message }), "warning");
           return { ok: false, message };
         }
-        commitFighters((prev) => {
-          const source = Array.isArray(fightersRef.current) ? fightersRef.current : prev;
-          return source.map((fighter, index) => {
-            const fighterId = String(fighter?.id || fighter?._id || fighter?.name || index);
-            return fighterId === String(actorId)
-              ? {
-                  ...fighter,
-                  maxStamina: staminaResult.maxStamina,
-                  currentStamina: staminaResult.currentStamina,
-                  fatigueLabel: staminaResult.fatigueLabel,
-                }
-              : fighter;
-          });
-        });
+        staminaResult = {
+          ok: true,
+          updated: movementSpend.updated,
+          spent: movementSpend.spent,
+          maxStamina: movementSpend.updated?.maxStamina ?? liveFighter.maxStamina,
+          currentStamina: movementSpend.nextStamina,
+          fatigueLabel: movementSpend.updated?.fatigueLabel,
+        };
       }
 
       const updatedFighter = (fightersRef.current || []).find((fighter, index) =>
@@ -14806,17 +14835,31 @@ function CombatPage({ characters = [] }) {
     }
 
     const staminaResult = staminaCost > 0
-      ? spendStamina(actionResult.updated, staminaCost)
+      ? applyCanonicalCatalogMovementStaminaSpend({
+          fighter: actionResult.updated,
+          amount: staminaCost,
+          spend: spendCombatStamina,
+          reason: "movement",
+          source: pending.partOfCombinedAction ? "charge-catalog-movement" : `${pending.actionType || "movement"}-catalog`,
+          executionKey: [
+            combatSessionRef.current || "session",
+            "movement-catalog",
+            actorId,
+            pending.actionType || "move",
+          ].join(":"),
+        })
       : {
+          accepted: true,
           ok: true,
           updated: actionResult.updated,
           spent: 0,
           maxStamina: actionResult.updated.maxStamina,
           currentStamina: actionResult.updated.currentStamina,
+          nextStamina: actionResult.updated.currentStamina,
           fatigueLabel: actionResult.updated.fatigueLabel,
         };
 
-    if (!staminaResult.ok) {
+    if (!staminaResult.accepted && !staminaResult.ok) {
       const message = "Movement completed, but no stamina was available to spend.";
       pendingSelectedMovementCommandRef.current = null;
       setSelectedMovementCommandResult({ ok: false, status: "moved", message });
@@ -14830,27 +14873,11 @@ function CombatPage({ characters = [] }) {
     );
     setManualPublicTurnOrder(nextManualTurnOrder);
 
-    if (staminaCost > 0) {
-      commitFighters((prev) => {
-        const source = Array.isArray(fightersRef.current) ? fightersRef.current : prev;
-        return source.map((fighter, index) => {
-          const fighterId = String(fighter?.id || fighter?._id || fighter?.name || index);
-          if (fighterId !== String(actorId)) return fighter;
-          return {
-            ...fighter,
-            maxStamina: staminaResult.maxStamina,
-            currentStamina: staminaResult.currentStamina,
-            fatigueLabel: staminaResult.fatigueLabel,
-          };
-        });
-      });
-    }
-
     const destinationText = destinationHex
       ? ` Destination: (${destinationHex.x}, ${destinationHex.y}).`
       : "";
     const staminaText = staminaCost > 0
-      ? ` Stamina spent: ${staminaResult.currentStamina}/${staminaResult.maxStamina} remaining.`
+      ? ` Stamina spent: ${staminaResult.nextStamina ?? staminaResult.currentStamina}/${staminaResult.updated?.maxStamina ?? staminaResult.maxStamina} remaining.`
       : "";
     const message =
       `${pending.actionName} movement completed.${destinationText} ` +
@@ -14869,6 +14896,7 @@ function CombatPage({ characters = [] }) {
     manualPublicTurnIndex,
     manualPublicTurnOrder,
     setManualPublicTurnOrder,
+    spendCombatStamina,
   ]);
 
   /**
@@ -20767,18 +20795,21 @@ function CombatPage({ characters = [] }) {
           : movementMode.isRunning
             ? "run"
             : "walk";
-      const fullCommitmentMovement = selectedGroundMode === "run" || selectedGroundMode === "charge";
+      const movementBudget = resolveManualGroundMovementActionBudget({
+        movementMode: selectedGroundMode,
+        remainingActions: combatant?.remainingActions,
+      });
+      const fullCommitmentMovement = movementBudget.fullCommitment === true;
+      const combinedChargeAction = movementBudget.partOfCombinedAction === true;
       const movementAlreadySpent = Math.max(0, Number(combatant?.movementSpentThisRoundFt) || 0);
-      if (combatant && fullCommitmentMovement && movementAlreadySpent > 0) {
+      if (combatant && movementBudget.blocksAfterPriorMovement && movementAlreadySpent > 0) {
         addLog(
           `${combatant.name} cannot ${selectedGroundMode} after already moving ${movementAlreadySpent} ft this round.`,
           "warning",
         );
         return;
       }
-      const moveCost = fullCommitmentMovement
-        ? Math.max(1, Number(combatant?.remainingActions) || 1)
-        : 1;
+      const moveCost = Number(movementBudget.actionCost) || 0;
       const landingCost = landingIntent ? 1 : 0;
       const totalCost = moveCost + landingCost;
 
@@ -21320,13 +21351,28 @@ function CombatPage({ characters = [] }) {
               ? "charges"
               : "runs";
           const movementModeText = playerMovementMode === "flight" ? "flies" : movementType;
+          const commitmentText = combinedChargeAction
+            ? "as a combined Charge action"
+            : fullCommitmentMovement
+              ? `as a full commitment (${totalCost} actions)`
+              : "as one action";
           addLog(
            `${combatant.name} ${movementModeText} ${manualDistanceFeet} ft from (${oldPos.x}, ${oldPos.y}) to (${x}, ${y}) ` +
-           `${fullCommitmentMovement ? `as a full commitment (${totalCost} actions)` : "as one action"}.`,
+           `${commitmentText}.`,
             "info"
           );
         }
       }
+
+      const pendingChargeCommand = pendingSelectedMovementCommandRef.current;
+      const chargeFollowThroughTargetId = combinedChargeAction
+        ? pendingChargeCommand?.followThroughTargetId
+          || selectedTarget?.id
+          || commandCatalogTargets[0]?.id
+          || null
+        : null;
+      const chargerId = selectedMovementFighter;
+      const remainingBeforeFollowThrough = remainingAfter;
 
       syncSelectedMovementCommandCost({
         actorId: selectedMovementFighter,
@@ -21340,12 +21386,97 @@ function CombatPage({ characters = [] }) {
       setSelectedTarget(null);
       setSelectedAttackWeapon(null);
       setSelectedManeuver(null);
-      turnActionResolvingRef.current = false;
-      executingActionRef.current = false;
       if (actionLockTimeoutRef.current) {
         clearTimeout(actionLockTimeoutRef.current);
         actionLockTimeoutRef.current = null;
       }
+
+      if (combinedChargeAction) {
+        pendingTurnAdvanceRef.current = false;
+        turnActionResolvingRef.current = true;
+        executingActionRef.current = true;
+        addLog(
+          `${combatant?.name || "Fighter"} Charge movement completed. Attack follow-through pending. ` +
+          `Actions remaining: ${remainingBeforeFollowThrough}.`,
+          "info",
+        );
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.ACTION,
+          eventType: "charge-follow-through-scheduled",
+          level: "info",
+          type: "debug",
+          actorId: chargerId,
+          targetId: chargeFollowThroughTargetId,
+          source: "charge-follow-through",
+          message:
+            `charge follow-through scheduled: actor=${combatant?.name || chargerId} ` +
+            `target=${chargeFollowThroughTargetId || "none"} remainingActions=${remainingBeforeFollowThrough}`,
+          data: {
+            remainingActions: remainingBeforeFollowThrough,
+            destination: { x, y },
+            partOfCombinedAction: true,
+          },
+        }, "debug");
+
+        if (!chargeFollowThroughTargetId) {
+          turnActionResolvingRef.current = false;
+          executingActionRef.current = false;
+          addLog("Charge movement completed, but no attack target remained.", "warning");
+          pendingTurnAdvanceRef.current = true;
+          scheduleEndTurn(350, "charge-follow-through-missing-target");
+          return;
+        }
+
+        const followThroughDelayMs = Math.max(
+          350,
+          Math.min(900, (Array.isArray(manualMovementPath) ? manualMovementPath.length : 2) * 120),
+        );
+        const followThroughTimer = setTimeout(() => {
+          const liveCharger = (fightersRef.current || []).find((fighter) => fighter.id === chargerId);
+          const liveTarget = (fightersRef.current || []).find((fighter) => fighter.id === chargeFollowThroughTargetId);
+          if (!combatActiveRef.current || combatOverRef.current || combatEndCheckRef.current) {
+            turnActionResolvingRef.current = false;
+            executingActionRef.current = false;
+            return;
+          }
+          if (!liveCharger || !liveTarget || !attackRef.current) {
+            turnActionResolvingRef.current = false;
+            executingActionRef.current = false;
+            addLog("Charge attack follow-through could not resolve its actors.", "warning");
+            pendingTurnAdvanceRef.current = true;
+            scheduleEndTurn(0, "charge-follow-through-actors-missing");
+            return;
+          }
+          const attackActionId = createAttackExecutionKeyRef.current?.(
+            liveCharger.id,
+            liveTarget.id,
+            "charge-follow-through",
+          );
+          if (!attackActionId) {
+            turnActionResolvingRef.current = false;
+            executingActionRef.current = false;
+            addLog("Charge attack follow-through could not mint an execution key.", "warning");
+            pendingTurnAdvanceRef.current = true;
+            scheduleEndTurn(0, "charge-follow-through-key-rejected");
+            return;
+          }
+          turnActionResolvingRef.current = false;
+          executingActionRef.current = false;
+          const chargeAttackBonus = Number(MOVEMENT_ACTIONS.CHARGE?.bonuses?.attack) || 2;
+          void attackRef.current(liveCharger, liveTarget.id, {
+            attackBonus: chargeAttackBonus,
+            damageMultiplier: 2,
+            source: "charge-follow-through",
+            attackActionId,
+          });
+        }, followThroughDelayMs);
+        allTimeoutsRef.current.push(followThroughTimer);
+        return;
+      }
+
+      turnActionResolvingRef.current = false;
+      executingActionRef.current = false;
       pendingTurnAdvanceRef.current = true;
       addLog("manual move finalized; movement state cleared", "info");
 
@@ -21389,6 +21520,9 @@ function CombatPage({ characters = [] }) {
     setSelectedAttackWeapon,
     setSelectedManeuver,
     setSelectedActionType,
+    spendCombatStamina,
+    commandCatalogTargets,
+    selectedTarget,
   ]);
 
   const settleManualWeaponEntryChoice = useCallback((techniqueId) => {
@@ -23938,7 +24072,6 @@ function CombatPage({ characters = [] }) {
     liveAttacker = grappleFighters.find((f) => f.id === attacker?.id) || liveAttacker;
     liveDefender = grappleFighters.find((f) => f.id === defenderId);
     const debugGrappleFns = {
-      applyDamageWithArmor,
       initiateGrapple,
       breakGrappleWithPush,
       breakGrappleWithTrip,
@@ -24176,65 +24309,11 @@ function CombatPage({ characters = [] }) {
       if (f.id === defenderId) return enhancedDefender;
       return f;
     });
-    const baseAttackerStamina = Number(liveAttacker?.fatigueState?.currentStamina);
-    const baseDefenderStamina = Number(defender?.fatigueState?.currentStamina);
-    const staminaRebateById = new Map([
-      [
-        liveAttacker?.id,
-        Math.max(
-          0,
-          Math.min(
-            STAMINA_COSTS.GRAPPLING - 1,
-            attackerMods.peDrainReduction + attackerMods.ppEfficiencyReduction
-          )
-        ),
-      ],
-      [
-        defenderId,
-        Math.max(
-          0,
-          Math.min(
-            STAMINA_COSTS.GRAPPLING - 1,
-            defenderMods.peDrainReduction + defenderMods.ppEfficiencyReduction
-          )
-        ),
-      ],
-    ]);
-    const staminaBeforeById = new Map([
-      [liveAttacker?.id, baseAttackerStamina],
-      [defenderId, baseDefenderStamina],
-    ]);
-    const rebateAppliedRef = { current: new Set() };
-    const applyGrappleStaminaRebate = (nextFighters) =>
-      nextFighters.map((f) => {
-        const rebate = staminaRebateById.get(f.id) || 0;
-        const before = staminaBeforeById.get(f.id);
-        const current = Number(f.fatigueState?.currentStamina);
-        if (
-          rebate <= 0 ||
-          rebateAppliedRef.current.has(f.id) ||
-          !Number.isFinite(before) ||
-          !Number.isFinite(current) ||
-          current >= before
-        ) {
-          return f;
-        }
-        rebateAppliedRef.current.add(f.id);
-        const maxStamina = Number(f.fatigueState?.maxStamina ?? f.maxStamina ?? before);
-        const nextStamina = Math.min(
-          Number.isFinite(maxStamina) ? maxStamina : before,
-          current + rebate
-        );
-        const updated = {
-          ...f,
-          fatigueState: {
-            ...(f.fatigueState || {}),
-            currentStamina: nextStamina,
-          },
-        };
-        updateFatiguePenalties(updated);
-        return updated;
-      });
+    // Milestone 8D Phase 6: the legacy grapple stamina rebate is removed. It
+    // compensated for the low-level legacy drainStamina writes (refunding
+    // endurance/agility efficiency into fatigueState only). With the legacy
+    // drains removed, the canonical grapple admission is the sole stamina
+    // owner and no rebate or fatigueState-only adjustment may run here.
     const setGrappleFighters = (updater) => {
       const authoritative = fightersRef.current ?? fighters ?? [];
       const rawNext =
@@ -24298,8 +24377,7 @@ function CombatPage({ characters = [] }) {
           initiativeTurnId: current.initiativeTurnId ?? next.initiativeTurnId,
         };
       });
-      const rebated = applyGrappleStaminaRebate(merged);
-      const restored = rebated.map(restoreTechniqueFields).map((fighter) => (
+      const restored = merged.map(restoreTechniqueFields).map((fighter) => (
         isDominantGrappleReaction && fighter?.id === liveAttacker?.id
           ? {
               ...fighter,
@@ -24403,9 +24481,6 @@ function CombatPage({ characters = [] }) {
       return rejectCanonicalGrappleAdmission("combat-action-entry-without-turn-owner", { accepted: false, completed: true, reason: "combat-action-entry-without-turn-owner", actorId: liveAttacker?.id, opponentId: defenderId });
     }
 
-    if (attackerMods.peDrainReduction > 0) {
-      addLog(`${attacker.name}'s endurance reduces grapple fatigue.`, "info");
-    }
     if (attackerMods.ppControlBonus > 0) {
       addLog(`${attacker.name}'s agility improves grapple control.`, "info");
     }
@@ -25063,6 +25138,9 @@ function CombatPage({ characters = [] }) {
       admission: canonicalAdmission,
       spendCanonicalGrappleStamina: spendAdmittedGrappleStamina,
       recoverCanonicalGrappleStamina: recoverAdmittedGrappleStamina,
+      resolvedCanonicalEffectKeys: resolvedCanonicalEffectKeysRef.current,
+      combatSession: combatSessionRef.current || "default",
+      turnToken: grappleDispatchActionToken,
       automatedControl: Boolean(
         liveAttacker?.team === "enemy" ||
         liveAttacker?.type === "enemy" ||
@@ -35550,7 +35628,7 @@ function CombatPage({ characters = [] }) {
         }
 
         // Check for braced weapon counter-damage (spear/polearm vs charge on natural 18-20)
-        const defenderWeapon = defenderAfterHit.equistaminadWeapons?.primary || defenderAfterHit.equistaminadWeapons?.secondary || null;
+        const defenderWeapon = resolveBracedCounterDefenderWeapon(defenderAfterHit);
         const isBraced = defensiveStance[defenderAfterHit.id] === "Brace" ||
           (defenseType === "Block" && defenderWeapon && (defenderWeapon.name?.toLowerCase().includes("spear") ||
             defenderWeapon.name?.toLowerCase().includes("pike") ||
@@ -35562,24 +35640,35 @@ function CombatPage({ characters = [] }) {
           if (attackDiceRoll >= 18 && attackDiceRoll <= 20) {
             // Braced weapon counter-damage
             const counterDamage = Math.floor(finalDamage / 3); // Attacker takes 1/3 of damage
-            addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)}'s braced ${defenderWeapon.name} impales ${formatNormalAttackActorLabel(stateAttacker, defenderAfterHit, updated)} for ${counterDamage} damage!`, "critical");
-            // Apply counter-damage to attacker
-            const attackerInUpdated = updated.find(f => f.id === attacker.id);
-            if (attackerInUpdated) {
-              attackerInUpdated.currentHP = (attackerInUpdated.currentHP || attackerInUpdated.maxHP) - counterDamage;
-              if (attackerInUpdated.currentHP <= 0) {
-                const attackerHPStatus = getHPStatus(attackerInUpdated.currentHP);
-                if (import.meta.env?.DEV && settingsRef.current?.showCombatDebug) {
-                  addLog(`Debug: ${attacker.name} HP status ${attackerHPStatus}`, "info");
-                }
-                if (attackerInUpdated.currentHP <= -21) {
-                  addLog(`${attacker.name} is KILLED by the counter-attack!`, "defeat");
-                } else if (attackerInUpdated.currentHP <= -11) {
-                  addLog(`${attacker.name} is CRITICALLY wounded by the counter-attack!`, "defeat");
-                } else if (attackerInUpdated.currentHP <= -1) {
-                  addLog(`${attacker.name} is DYING from the counter-attack!`, "defeat");
-                } else {
-                  addLog(`${attacker.name} is knocked unconscious by the counter-attack!`, "defeat");
+            if (!isAttackActionLive("braced-counter-hp-mutation")) {
+              logStaleDamageApplicationRejected("braced-counter-ownership-stale");
+            } else {
+              // Resolve the charging attacker by stable identity and let the
+              // canonical HP authority own clamping, aliases, and status.
+              const attackerInUpdated = updated.find((f) => f.id === normalAttackAttackerId);
+              if (!attackerInUpdated) {
+                logStaleDamageApplicationRejected("braced-counter-attacker-missing");
+              } else {
+                const counterResultHP = clampHP(
+                  getFighterHP(attackerInUpdated) - counterDamage,
+                  attackerInUpdated,
+                );
+                applyHPToFighter(attackerInUpdated, counterResultHP);
+                addLog(`${formatNormalAttackActorLabel(defenderAfterHit, stateAttacker, updated)}'s braced ${defenderWeapon.name} impales ${formatNormalAttackActorLabel(stateAttacker, defenderAfterHit, updated)} for ${counterDamage} damage!`, "critical");
+                if (counterResultHP <= 0) {
+                  const attackerHPStatus = getHPStatus(counterResultHP);
+                  if (import.meta.env?.DEV && settingsRef.current?.showCombatDebug) {
+                    addLog(`Debug: ${attacker.name} HP status ${attackerHPStatus}`, "info");
+                  }
+                  if (counterResultHP <= -21) {
+                    addLog(`${attacker.name} is KILLED by the counter-attack!`, "defeat");
+                  } else if (counterResultHP <= -11) {
+                    addLog(`${attacker.name} is CRITICALLY wounded by the counter-attack!`, "defeat");
+                  } else if (counterResultHP <= -1) {
+                    addLog(`${attacker.name} is DYING from the counter-attack!`, "defeat");
+                  } else {
+                    addLog(`${attacker.name} is knocked unconscious by the counter-attack!`, "defeat");
+                  }
                 }
               }
             }
@@ -46293,6 +46382,10 @@ function CombatPage({ characters = [] }) {
     attackRef.current = attack;
   }, [attack]);
 
+  useEffect(() => {
+    createAttackExecutionKeyRef.current = createAttackExecutionKey;
+  }, [createAttackExecutionKey]);
+
   // Auto-open combat choices when it's a player character's turn
   // Also responds to aiControlEnabled changes during combat
   useEffect(() => {
@@ -51435,6 +51528,286 @@ function CombatPage({ characters = [] }) {
     }
   }
 
+  const phase2eFixtureRuntimeRef = useRef(null);
+  const phase2eFixtureIdsRef = useRef({ charger: null, bracer: null });
+  if (import.meta.env?.DEV || import.meta.env?.MODE === "development") {
+    const catalogForActor = (actor, selectedTarget = null) => buildCombatActionCatalog({
+      actor,
+      targets: selectedTarget ? [selectedTarget] : commandCatalogTargets,
+      currentTurnEntry: actor && String(commandTurnEntry?.id) === String(actor.id) ? commandTurnEntry : actor,
+      selectedTarget,
+      equippedWeapons: actor ? getEquistaminadWeapons(actor) : [],
+      inventory: actor?.inventory || actor?.items || [],
+      compatibilityActions: [],
+    });
+    const liveFighters = () => (
+      Array.isArray(fightersRef.current) && fightersRef.current.length > 0
+        ? fightersRef.current
+        : fighters
+    );
+    const livePositions = () => positionsRef.current || positions || {};
+    const findByRole = (role) => {
+      const spec = PHASE2E_BRACED_COUNTER_FIXTURE[role];
+      const roster = liveFighters();
+      const storedId = phase2eFixtureIdsRef.current?.[role];
+      return roster.find((fighter) => String(fighter?.id) === String(storedId))
+        || roster.find((fighter) => fighter?.name === spec.name)
+        || null;
+    };
+    const buildSnapshot = () => {
+      const charger = findByRole("charger");
+      const bracer = findByRole("bracer");
+      const current = liveFighters()[turnIndexRef.current ?? turnIndex] || commandActor || null;
+      const chargerSummary = charger ? summarizeFighter(charger, livePositions()) : null;
+      const bracerSummary = bracer ? summarizeFighter(bracer, livePositions()) : null;
+      const chargerCatalog = charger ? catalogForActor(charger, bracer) : [];
+      const bracerCatalog = bracer ? catalogForActor(bracer, charger) : [];
+      return {
+        combatActive: Boolean(combatActiveRef.current ?? combatActive),
+        combatOver: Boolean(combatOverRef.current || combatEndCheckRef.current),
+        timingMode: combatTimingModeRef.current || combatTimingMode,
+        currentActorId: current?.id || commandTurnBridge.activeActorId || null,
+        currentActorName: current?.name || commandTurnBridge.activeActorName || null,
+        turnIndex: turnIndexRef.current ?? turnIndex,
+        remainingActions: current?.remainingActions ?? commandTurnBridge.remainingActions,
+        maxActions: current?.maxActions ?? commandTurnBridge.maxActions,
+        pendingTurnAdvance: Boolean(pendingTurnAdvanceRef.current),
+        turnActionResolving: Boolean(turnActionResolvingRef.current),
+        executingAction: Boolean(executingActionRef.current),
+        movementActive: Boolean(movementMode?.active),
+        validMoves: Array.isArray(engineValidMoves) ? engineValidMoves.map((hex) => ({ x: hex.x, y: hex.y })) : [],
+        showTacticalMap,
+        defensiveStance: { ...defensiveStance },
+        charger: chargerSummary,
+        bracer: bracerSummary,
+        deploymentPositions: flattenDeploymentPositions(preBattleDeployment),
+        ids: {
+          chargerId: chargerSummary?.id || null,
+          bracerId: bracerSummary?.id || null,
+        },
+        identitiesChanged: Boolean(
+          (chargerSummary?.originalCombatId && chargerSummary.originalCombatId !== chargerSummary.id)
+          || (bracerSummary?.originalCombatId && bracerSummary.originalCombatId !== bracerSummary.id)
+        ),
+        catalog: {
+          charge: chargerCatalog.find((action) => action.type === "charge") || null,
+          block: bracerCatalog.find((action) => action.type === "block") || null,
+        },
+        posture: {
+          bracer: bracer ? (getCombatPosture(bracer) || null) : null,
+          bracerStance: bracer ? (defensiveStance[bracer.id] || "") : "",
+        },
+        logs: (typeof getCanonicalLogSnapshot === "function" ? getCanonicalLogSnapshot() : [])
+          .slice(-80)
+          .map((entry) => ({
+            message: entry?.message || "",
+            eventType: entry?.eventType || "",
+            type: entry?.type || entry?.legacyType || "",
+            actorId: entry?.actorId || null,
+            targetId: entry?.targetId || null,
+          })),
+      };
+    };
+    phase2eFixtureRuntimeRef.current = {
+      snapshot: buildSnapshot,
+      clearRoster() {
+        if (combatActiveRef.current) resetCombat();
+        fightersRef.current = [];
+        combatRosterSnapshotRef.current = [];
+        setFighters([]);
+        setPreBattleDeployment(createEmptyDeploymentState());
+        positionsRef.current = {};
+        committedPositionsRef.current = {};
+        setPositions({});
+        phase2eFixtureIdsRef.current = { charger: null, bracer: null };
+        return { ok: true };
+      },
+      addFixtureActors() {
+        this.clearRoster();
+        const knightActor = SELECTABLE_ACTORS.find((actor) => actor.id === PHASE2E_BRACED_COUNTER_FIXTURE.charger.actorId);
+        const spearmanActor = SELECTABLE_ACTORS.find((actor) => actor.id === PHASE2E_BRACED_COUNTER_FIXTURE.bracer.actorId);
+        const chargerConversion = adaptSelectableActorToCombatant(knightActor, {
+          team: "party",
+          controlMode: "manual",
+        });
+        const bracerConversion = adaptSelectableActorToCombatant(spearmanActor, {
+          team: "enemy",
+          controlMode: "manual",
+        });
+        if (!chargerConversion.ok || !bracerConversion.ok) {
+          return {
+            ok: false,
+            message: "fixture actors could not be adapted from the selectable catalog",
+          };
+        }
+        const charger = addCombatant(
+          { ...chargerConversion.combatant, controlMode: "manual", playable: true },
+          PHASE2E_BRACED_COUNTER_FIXTURE.charger.name,
+          1,
+          "None",
+          PHASE2E_BRACED_COUNTER_FIXTURE.charger.weapon,
+          0,
+          "player",
+          "party",
+          { ...EMPTY_EQUIPMENT_SELECTION, rightHand: PHASE2E_BRACED_COUNTER_FIXTURE.charger.weapon },
+        );
+        const bracer = addCombatant(
+          { ...bracerConversion.combatant, controlMode: "manual", playable: true },
+          PHASE2E_BRACED_COUNTER_FIXTURE.bracer.name,
+          1,
+          "None",
+          PHASE2E_BRACED_COUNTER_FIXTURE.bracer.weapon,
+          0,
+          null,
+          "enemy",
+          { ...EMPTY_EQUIPMENT_SELECTION, rightHand: PHASE2E_BRACED_COUNTER_FIXTURE.bracer.weapon },
+        );
+        const chargerHp = PHASE2E_BRACED_COUNTER_FIXTURE.charger.survivalHp;
+        const bracerHp = PHASE2E_BRACED_COUNTER_FIXTURE.bracer.survivalHp;
+        const withHp = (fighter, hp) => ({
+          ...fighter,
+          currentHP: hp,
+          hp,
+          HP: hp,
+          maxHP: hp,
+          maxHp: hp,
+          status: "active",
+        });
+        const chargerReady = withHp(charger, chargerHp);
+        const bracerReady = withHp(bracer, bracerHp);
+        setFighters((prev) => prev.map((fighter) => {
+          if (fighter.id === charger.id) return withHp(fighter, chargerHp);
+          if (fighter.id === bracer.id) return withHp(fighter, bracerHp);
+          return fighter;
+        }));
+        phase2eFixtureIdsRef.current = { charger: charger.id, bracer: bracer.id };
+        setPreBattleDeployment((prev) => applyExplicitDeploymentPositions(prev, [
+          {
+            fighterId: charger.id,
+            side: "player",
+            ...PHASE2E_BRACED_COUNTER_FIXTURE.charger.position,
+          },
+          {
+            fighterId: bracer.id,
+            side: "enemy",
+            ...PHASE2E_BRACED_COUNTER_FIXTURE.bracer.position,
+          },
+        ]));
+        return {
+          ok: true,
+          chargerId: charger.id,
+          bracerId: bracer.id,
+          preStartPositions: {
+            charger: { ...PHASE2E_BRACED_COUNTER_FIXTURE.charger.position },
+            bracer: { ...PHASE2E_BRACED_COUNTER_FIXTURE.bracer.position },
+          },
+          charger: summarizeFighter(chargerReady, {
+            [charger.id]: PHASE2E_BRACED_COUNTER_FIXTURE.charger.position,
+          }),
+          bracer: summarizeFighter(bracerReady, {
+            [bracer.id]: PHASE2E_BRACED_COUNTER_FIXTURE.bracer.position,
+          }),
+        };
+      },
+      startCombat() {
+        setShowTacticalMap(true);
+        startCombat();
+        return { ok: true };
+      },
+      ensureSurvivalHp() {
+        const ids = phase2eFixtureIdsRef.current;
+        const chargerHp = PHASE2E_BRACED_COUNTER_FIXTURE.charger.survivalHp;
+        const bracerHp = PHASE2E_BRACED_COUNTER_FIXTURE.bracer.survivalHp;
+        const next = liveFighters().map((fighter) => {
+          if (fighter.id !== ids.charger && fighter.id !== ids.bracer) return fighter;
+          const hp = fighter.id === ids.charger ? chargerHp : bracerHp;
+          const updated = {
+            ...fighter,
+            maxHP: hp,
+            maxHp: hp,
+            derivedStats: {
+              ...(fighter.derivedStats || {}),
+              hp,
+              maxHp: hp,
+            },
+          };
+          applyHPToFighter(updated, hp);
+          return updated;
+        });
+        fightersRef.current = next;
+        setFighters(next);
+        return {
+          ok: true,
+          chargerHp,
+          bracerHp,
+        };
+      },
+      verifyLiveState() {
+        const snapshot = buildSnapshot();
+        const result = assertFixtureLiveState({
+          charger: snapshot.charger,
+          bracer: snapshot.bracer,
+          positions: livePositions(),
+          catalogByRole: snapshot.catalog,
+        });
+        return { ...result, snapshot };
+      },
+      enterBlockingPosture() {
+        const bracer = findByRole("bracer");
+        if (!bracer) return { ok: false, message: "bracer missing" };
+        return applyManualPublicGuardPosture({
+          actorId: bracer.id,
+          postureType: "blocking",
+        });
+      },
+      endCurrentAction() {
+        endCommandCenterCurrentAction();
+        return { ok: true };
+      },
+      beginCharge() {
+        const charger = findByRole("charger");
+        const bracer = findByRole("bracer");
+        if (!charger || !bracer) return { ok: false, message: "fixture actors missing" };
+        setShowTacticalMap(true);
+        setSelectedTarget(bracer);
+        const charge = catalogForActor(charger, bracer).find((action) => action.type === "charge");
+        if (!charge) return { ok: false, message: "Charge action missing from catalog" };
+        setSelectedCombatAction(charge);
+        return activateSelectedMovementTargeting({ action: charge });
+      },
+      selectChargeDestination() {
+        const destination = PHASE2E_BRACED_COUNTER_FIXTURE.chargeDestination;
+        handleMoveSelect(destination.x, destination.y);
+        return { ok: true, destination };
+      },
+    };
+  }
+
+  useEffect(() => {
+    if (!(import.meta.env?.DEV || import.meta.env?.MODE === "development")) return undefined;
+    if (typeof window === "undefined") return undefined;
+    const runtime = () => phase2eFixtureRuntimeRef.current;
+    window[PHASE2E_BRACED_COUNTER_FIXTURE.windowApiName] = {
+      version: "8d-phase2e",
+      fixture: PHASE2E_BRACED_COUNTER_FIXTURE,
+      snapshot: () => runtime()?.snapshot?.() || null,
+      clearRoster: () => runtime()?.clearRoster?.(),
+      addFixtureActors: () => runtime()?.addFixtureActors?.(),
+      startCombat: () => runtime()?.startCombat?.(),
+      ensureSurvivalHp: () => runtime()?.ensureSurvivalHp?.(),
+      verifyLiveState: () => runtime()?.verifyLiveState?.(),
+      enterBlockingPosture: () => runtime()?.enterBlockingPosture?.(),
+      endCurrentAction: () => runtime()?.endCurrentAction?.(),
+      beginCharge: () => runtime()?.beginCharge?.(),
+      selectChargeDestination: () => runtime()?.selectChargeDestination?.(),
+    };
+    return () => {
+      if (window[PHASE2E_BRACED_COUNTER_FIXTURE.windowApiName]) {
+        delete window[PHASE2E_BRACED_COUNTER_FIXTURE.windowApiName];
+      }
+    };
+  });
+
   useEffect(() => {
     if (!(import.meta.env?.DEV || import.meta.env?.MODE === "development")) return undefined;
     if (typeof window === "undefined") return undefined;
@@ -51507,6 +51880,120 @@ function CombatPage({ characters = [] }) {
             HP: target?.HP,
           },
           result: lastCanonicalEffectResultRef.current,
+        };
+      },
+      applyGrappleImpact(spec = {}) {
+        const gap = spec.gap === true;
+        const executionKey = `phase5-grapple-fixture:${gap ? "gap" : "armored"}:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+        const source = {
+          id: "phase5-grapple-attacker",
+          name: "Fixture Grappler",
+          controlMode: spec.controlMode || "manual",
+          team: "party",
+          currentHP: 24,
+          hp: 24,
+          maxHP: 24,
+          attributes: { might: 16, deftness: 14 },
+          grappleState: {
+            state: gap ? "ground" : "clinch",
+            positionState: gap ? "grounded" : "standing",
+            opponent: "phase5-grapple-defender",
+            hasGrappleAdvantage: true,
+            groundControl: gap ? { state: "pinned" } : null,
+          },
+        };
+        const target = {
+          id: "phase5-grapple-defender",
+          name: "Fixture Armored Defender",
+          controlMode: "ai",
+          team: "enemy",
+          currentHP: 30,
+          hp: 30,
+          maxHP: 30,
+          guardRating: 12,
+          currentarmorDurability: 60,
+          armorDurability: 60,
+          equippedArmor: {
+            id: "fixture-plate",
+            name: "Plate Harness",
+            type: "armor",
+            category: "heavy",
+            material: "hardened-steel",
+            paddingPresent: true,
+          },
+          armorProfile: { armorClass: "plate", rigidCoverage: true },
+          grappleState: {
+            state: gap ? "grappled" : "clinch",
+            positionState: gap ? "grounded" : "standing",
+            opponent: source.id,
+          },
+        };
+        const weapon = {
+          id: "fixture-dagger",
+          weaponId: "fixture-dagger",
+          name: "Dagger",
+          damage: "1d4",
+          damageType: "piercing",
+          attackMode: "dagger-gap-attack",
+        };
+        const rawDamage = Number(spec.damage ?? 7);
+        const hitLocation = spec.hitLocation || (gap ? "neck" : "torso");
+        const armorContact = gap
+          ? {
+              contactType: "armor-gap",
+              coverageType: "gap",
+              gapReached: true,
+              damageAllowed: true,
+              bodilyDamageMultiplier: 1,
+              gapLocation: hitLocation,
+            }
+          : null;
+        const beforeHP = getFighterHP(target);
+        const impact = applyCanonicalGrappleImpact({
+          fighters: [source, target],
+          attacker: source,
+          defender: target,
+          result: {
+            damage: rawDamage,
+            hit: true,
+            attackRoll: Number(spec.attackRoll ?? (gap ? 20 : 13)),
+            critical: gap,
+            weakSpot: gap,
+          },
+          actionType: gap ? "groundedArmorGapStrike" : "clinchStrike",
+          weapon,
+          attackMode: weapon.attackMode,
+          hitLocation,
+          armorContact,
+          executionKey,
+          combatSession: combatSessionRef.current || "phase5-fixture",
+          turnToken: currentTurnTokenRef.current || executionKey,
+          resolvedKeys: resolvedCanonicalEffectKeysRef.current,
+          originControlMode: source.controlMode,
+          authorities: { clampHP, getFighterHP, applyHPToFighter },
+        });
+        if (impact.accepted) {
+          fightersRef.current = impact.fighters;
+          setFighters(impact.fighters);
+        }
+        const afterHP = impact.target ? getFighterHP(impact.target) : beforeHP;
+        return {
+          ok: impact.accepted,
+          reason: impact.reason,
+          executionKey,
+          weapon: weapon.name,
+          hitLocation: impact.protection?.hitLocation?.location || hitLocation,
+          armorConsulted: impact.protection?.armorConsulted === true,
+          contactType: impact.protection?.contact?.contactType || null,
+          gapPreserved: impact.protection?.gapPreserved === true,
+          rawDamage,
+          appliedDamage: impact.appliedAmount || 0,
+          hpBefore: beforeHP,
+          hpAfter: afterHP,
+          armorAssemblyOutcome: impact.protection?.layered?.outcome || null,
+          aggregateDurabilityBefore: target.currentarmorDurability,
+          aggregateDurabilityAfter: impact.target?.currentarmorDurability,
+          mutationKey: impact.mutationKey || null,
         };
       },
     };
@@ -52856,9 +53343,9 @@ function CombatPage({ characters = [] }) {
               <Button
                 colorScheme="green"
                 variant="solid"
-                onClick={() => startCombat(false, { skipDeployment: true })}
+                onClick={() => startCombat()}
                 isDisabled={fighters.length < 2}
-                title="Skip guided deployment and start battle with default starting positions"
+                title="Start with the current deployment, or default positions when none exist"
               >
                 Start Battle
               </Button>
