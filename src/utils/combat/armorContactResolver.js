@@ -18,6 +18,35 @@ function getLocation(hitLocation) {
   return hitLocation?.location || hitLocation?.zone || "torso";
 }
 
+export function isCanonicalPhysicalThrownWeapon(weapon = {}) {
+  const deliveryType = String(
+    weapon?.deliveryType || weapon?.deliveryMethod || "",
+  ).trim().toLowerCase();
+  const classification = [
+    weapon?.attackType,
+    weapon?.type,
+    weapon?.weaponType,
+    weapon?.category,
+  ].map((value) => String(value || "").trim().toLowerCase());
+  return (
+    deliveryType === "thrown" ||
+    weapon?.isThrown === true ||
+    classification.includes("thrown")
+  );
+}
+
+export function getCanonicalThrownArmorMode(weapon = {}) {
+  if (!isCanonicalPhysicalThrownWeapon(weapon)) return null;
+  return String(
+    weapon?.attackMode ||
+    weapon?.selectedTechnique ||
+    weapon?.armorTechnique ||
+    weapon?.techniqueKey ||
+    weapon?.armorContactProfile ||
+    `${weapon?.weaponFamily || "physical-weapon"}-throw`,
+  ).trim();
+}
+
 function hasStatus(actor = {}, statusText) {
   const wanted = String(statusText || "").toLowerCase();
   const values = [
@@ -121,7 +150,14 @@ export function resolveArmorContact({
   const defense = Number(normalDefense ?? defender?.guardRating ?? defender?.armorClass ?? defender?.ac ?? 10) || 10;
   const total = Number(attackTotal ?? attackRoll ?? 0) || 0;
   const armorProfile = armor?.armorClass ? armor : normalizeArmorProfile(defender || {});
-  const mode = normalizeLongswordAttackMode({ weapon: weapon || attackData, attackMode, attackData });
+  const physicalWeapon = weapon || attackData || {};
+  const mode = isCanonicalPhysicalThrownWeapon(physicalWeapon)
+    ? (
+        String(attackMode || "").trim() ||
+        getCanonicalThrownArmorMode(physicalWeapon) ||
+        "physical-weapon-throw"
+      )
+    : normalizeLongswordAttackMode({ weapon: physicalWeapon, attackMode, attackData });
   const weaponTraits = getWeaponArmorTraits(weapon || attackData || {});
   const gapCapable = Array.isArray(weaponTraits.gapCapableModes) && weaponTraits.gapCapableModes.includes(mode);
   const gapState = buildTargetGapState(defender, targetState);

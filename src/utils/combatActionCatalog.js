@@ -17,6 +17,10 @@ import {
   CANONICAL_FOOD_RECIPES,
   FOOD_PROCESSING_ACTIONS,
 } from "./combat/canonicalFoodProcessing.js";
+import {
+  normalizeCanonicalAmmunitionState,
+  normalizeCanonicalRangedWeaponProfile,
+} from "./combat/canonicalRangedCombat.js";
 
 const hasValue = (value) => value !== undefined && value !== null && value !== "";
 
@@ -1047,6 +1051,54 @@ const buildConcealmentAndAimActions = ({ actor, currentTurnEntry, selectedTarget
   }));
 };
 
+const buildRangedReloadActions = ({ actor, currentTurnEntry, equippedWeapons, inventory }) => {
+  const actorWithInventory = {
+    ...actor,
+    inventory: getInventoryCandidates({ actor, inventory }),
+  };
+  const crossbow = getWeaponCandidates({ actor, equippedWeapons })
+    .map((weapon) => normalizeCanonicalRangedWeaponProfile(weapon))
+    .find((weapon) => String(weapon?.weaponFamily || "").toLowerCase() === "crossbow");
+  if (!crossbow) return [];
+  const ammunitionState = normalizeCanonicalAmmunitionState(actorWithInventory, crossbow);
+  if (ammunitionState?.chambered === true || ammunitionState?.reloadState === "loaded") return [];
+  const actorCannotReload = Boolean(
+    actor.dead || actor.isDead || actor.unconscious || actor.isUnconscious
+    || actor.surrendered || actor.captured || actor.routed || actor.canAct === false
+  );
+  const grappled = Boolean(actor.grappleState?.active || actor.grappled || actor.isGrappling);
+  const hasAmmunition = Number(ammunitionState?.current || 0) > 0;
+  const disabledReason = actorCannotReload
+    ? "This combatant cannot reload."
+    : grappled
+      ? "A crossbow cannot be reloaded while grappling."
+      : !hasAmmunition
+        ? "No compatible bolts remain."
+        : "";
+  return [makeAction({
+    actor,
+    currentTurnEntry,
+    id: `reload-${crossbow.weaponId || crossbow.name || "crossbow"}`,
+    name: `Reload ${normalizeText(crossbow.name, "Crossbow")}`,
+    type: "reload",
+    source: "canonical ranged catalog",
+    category: "Ranged",
+    costActions: 1,
+    costStamina: 0,
+    enabled: !disabledReason,
+    disabledReason,
+    previewSummary: "Chamber one bolt. Ammunition is consumed only when the projectile is released.",
+    metadata: {
+      executor: "completeCanonicalRangedReload",
+      weaponId: crossbow.weaponId,
+      weaponName: crossbow.name,
+      ammunitionType: ammunitionState?.ammunitionType,
+      chambered: false,
+      reloadState: ammunitionState?.reloadState || "reload-required",
+    },
+  })];
+};
+
 const compatibilityTypeFor = (label) => {
   const normalized = label.toLowerCase();
   if (normalized.includes("skill") || normalized.includes("hide") || normalized.includes("prowl")) return "use-skill";
@@ -1156,6 +1208,7 @@ export function buildCombatActionCatalog({
   buildCarrierActions({ actor, currentTurnEntry, selectedTarget, carrierContext }).forEach((action) => addUnique(actions, action));
   buildHuntingActions({ actor, currentTurnEntry, selectedTarget, huntingContext }).forEach((action) => addUnique(actions, action));
   buildConcealmentAndAimActions({ actor, currentTurnEntry, selectedTarget }).forEach((action) => addUnique(actions, action));
+  buildRangedReloadActions({ actor, currentTurnEntry, equippedWeapons, inventory }).forEach((action) => addUnique(actions, action));
   buildCarcassProcessingActions({ actor, currentTurnEntry, processingContext }).forEach((action) => addUnique(actions, action));
   buildFoodProcessingActions({ actor, currentTurnEntry, foodProcessingContext }).forEach((action) => addUnique(actions, action));
   buildItemActions({ actor, currentTurnEntry, inventory }).forEach((action) => addUnique(actions, action));

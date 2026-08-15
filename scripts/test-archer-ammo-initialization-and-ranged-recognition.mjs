@@ -37,6 +37,7 @@ const archerA = ensureConfiguredStartingAmmo(makeArcher("archer-a"), { source: "
 const archerB = ensureConfiguredStartingAmmo(makeArcher("archer-b"), { source: "test" });
 
 assert.equal(getInventoryAmmoCount(archerA, "arrows"), 20, "cloned Archer A gets independent starting arrows");
+assert.equal(getInventoryAmmoCount(archerA, "arrow"), 20, "canonical singular ammo type resolves plural inventory stacks");
 assert.equal(getInventoryAmmoCount(archerB, "arrows"), 20, "cloned Archer B gets independent starting arrows");
 assert.notEqual(archerA.inventory, archerB.inventory, "cloned ammo inventories are independent arrays");
 

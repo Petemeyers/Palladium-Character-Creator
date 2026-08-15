@@ -1,6 +1,11 @@
 import { resolveCanonicalArmorCoverage } from "./canonicalArmorCoverage.js";
 import { resolveCanonicalImpactPipeline } from "./canonicalImpactPipeline.js";
 import {
+  getCanonicalThrownArmorMode,
+  resolveArmorContact,
+} from "./armorContactResolver.js";
+import { CANONICAL_RANGED_AND_REACH_WEAPON_FIXTURES } from "../../data/canonicalCombatActors.js";
+import {
   FUMBLE_HANDOFF_STATES,
   createFumbleHandoffOwnership,
   resolveFumbleHandoffCoordinate,
@@ -78,5 +83,83 @@ export function createThreeFighterFumbleAuthorityScenario({ rounds = 5 } = {}) {
     coordinates.push(coordinate);
   }
   return Object.freeze({ fighters: Object.freeze(fighters), coordinates: Object.freeze(coordinates), ownership: released });
+}
+
+export function createThrownWeaponArmorAuthorityScenario() {
+  const weapon = CANONICAL_RANGED_AND_REACH_WEAPON_FIXTURES.thrownDagger;
+  const attacker = {
+    id: "thrown-attacker",
+    name: "Thrown Attacker",
+    team: "party",
+    inventory: [{ name: "Dagger", quantity: 1 }],
+  };
+  const plateTarget = {
+    id: "plate-target",
+    name: "Plate Target",
+    team: "enemy",
+    armorClass: 10,
+    equippedArmor: { id: "armor.field-plate", name: "Field Plate" },
+    armorProfile: {
+      armorClass: "plate",
+      rigidCoverage: true,
+      coveredLocations: ["head", "torso", "weaponArm", "shieldArm", "hands", "legs"],
+    },
+  };
+  const exposedTarget = {
+    id: "exposed-target",
+    name: "Exposed Target",
+    team: "enemy",
+    armorClass: 10,
+  };
+  const rawDamage = 4;
+  const hpBefore = 24;
+  const resolveCase = ({ controlMode, defender }) => {
+    const contact = resolveArmorContact({
+      attacker: { ...attacker, controlMode },
+      defender,
+      weapon,
+      attackData: weapon,
+      attackMode: getCanonicalThrownArmorMode(weapon),
+      attackRoll: 15,
+      attackTotal: 20,
+      hitLocation: "torso",
+      normalDefense: 10,
+    });
+    const appliedDamage = contact.damageAllowed
+      ? Math.max(0, Math.round(rawDamage * Number(contact.bodilyDamageMultiplier || 1)))
+      : 0;
+    return Object.freeze({
+      controlMode,
+      weaponId: weapon.weaponId,
+      weapon: weapon.name,
+      deliveryType: weapon.deliveryType,
+      damageType: weapon.damageType,
+      armorContactProfile: weapon.armorContactProfile,
+      bowSpecificProfileApplied: false,
+      distanceFeet: 20,
+      hitLocation: contact.hitLocation,
+      armorConsulted: defender.armorProfile?.armorClass || "unarmored",
+      contactResult: contact.contactType,
+      coverageType: contact.coverageType,
+      rawDamage,
+      appliedDamage,
+      hpBefore,
+      hpAfter: hpBefore - appliedDamage,
+      inventoryBefore: 1,
+      inventoryAfter: 1,
+      inventoryPolicy: "current-canonical-profile-is-ammunition-free",
+      contact,
+    });
+  };
+  const plate = resolveCase({ controlMode: "manual", defender: plateTarget });
+  const exposed = resolveCase({ controlMode: "manual", defender: exposedTarget });
+  const aiPlate = resolveCase({ controlMode: "ai", defender: plateTarget });
+  return Object.freeze({
+    plate,
+    exposed,
+    aiPlate,
+    parity: plate.contactType === aiPlate.contactType &&
+      plate.appliedDamage === aiPlate.appliedDamage,
+  });
 }
 

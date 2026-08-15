@@ -281,7 +281,11 @@ import {
   buildCriticalImpactScenario,
   getDamageSeverity,
 } from "../utils/combat/criticalImpactScenarios.js";
-import { resolveArmorContact } from "../utils/combat/armorContactResolver.js";
+import {
+  getCanonicalThrownArmorMode,
+  isCanonicalPhysicalThrownWeapon,
+  resolveArmorContact,
+} from "../utils/combat/armorContactResolver.js";
 import {
   DEFENSE_OUTCOMES,
   clearExchangeStatesForActor,
@@ -599,7 +603,9 @@ import {
 import {
   claimCanonicalAmmunitionSpend,
   commitCanonicalAmmunitionSpend,
+  completeCanonicalRangedReload,
   normalizeCanonicalAmmunitionState,
+  normalizeCanonicalRangedWeaponProfile,
   validateCanonicalRangedAttack,
 } from "../utils/combat/canonicalRangedCombat.js";
 import {
@@ -1069,7 +1075,6 @@ import {
   getCoverBonus,
   applyLightingEffects,
   TERRAIN_TYPES,
-  calculateLineOfSight,
   calculatePerceptionCheck
 } from "../utils/terrainSystem.js";
 import { getUnifiedAbilities, getCombatBonus } from "../utils/unifiedAbilities.js";
@@ -14147,6 +14152,31 @@ function CombatPage({ characters = [] }) {
       { value: "Sneak", label: "Sneak" },
       { value: "Aim", label: "Aim" },
     ];
+    const currentCrossbow = [
+      ...(currentFighter?.equippedWeapons || []),
+      ...(currentFighter?.weaponProfiles || []),
+      ...(currentFighter?.attacks || []),
+      currentFighter?.equipment?.rightHand,
+      currentFighter?.equipment?.leftHand,
+      currentFighter?.equipment?.weaponPrimary,
+      currentFighter?.equipment?.weaponSecondary,
+    ]
+      .filter(Boolean)
+      .map((weapon) => normalizeCanonicalRangedWeaponProfile(weapon))
+      .find((weapon) => weapon?.weaponFamily === "crossbow");
+    const currentCrossbowState = currentCrossbow
+      ? normalizeCanonicalAmmunitionState(currentFighter, currentCrossbow)
+      : null;
+    if (
+      currentCrossbow
+      && currentCrossbowState?.chambered !== true
+      && currentCrossbowState?.reloadState !== "loaded"
+    ) {
+      baseOptions.splice(1, 0, {
+        value: "Reload",
+        label: `Reload ${currentCrossbow.name || "Crossbow"}`,
+      });
+    }
 
     // Add flight actions if fighter can fly
     if (fighterCanFly) {
@@ -29753,47 +29783,6 @@ function CombatPage({ characters = [] }) {
       );
     }
 
-    if (
-      isAutomatedAttacker &&
-      isBowOrCrossbowAttackData(attackData) &&
-      isPlateArmorEquistaminad(effectiveAttacker)
-    ) {
-      const armorName = getEquistaminadArmorName(effectiveAttacker) || "plate armor";
-      addLog(
-       `${effectiveAttacker?.name || attacker.name} cannot fire ${attackData?.name || "a bow"} while wearing ${armorName}.`,
-        "warning"
-      );
-      burnFailedAutomatedActionAndEnd(`${attackData?.name || "bow"} blocked by ${armorName}`);
-      return;
-    }
-
-    const adjacentAttackDistance = (() => {
-      const attackerPos =
-        positionsRef.current?.[attacker?.id] ||
-        positions?.[attacker?.id];
-      const defenderPos =
-        positionsRef.current?.[defender?.id] ||
-        positions?.[defender?.id];
-      return attackerPos && defenderPos
-        ? calculateDistance(attackerPos, defenderPos)
-        : Number.POSITIVE_INFINITY;
-    })();
-
-    if (
-      isAutomatedAttacker &&
-      isRangedAttackData(attackData) &&
-      isAdjacentDistance(adjacentAttackDistance)
-    ) {
-      addLog(
-       `${attacker.name} cannot use ${attackData?.name || "a ranged weapon"} while adjacent to ${defender.name}.`,
-        "warning"
-      );
-      burnFailedAutomatedActionAndEnd(
-        `ranged weapon blocked in melee range (${Math.round(adjacentAttackDistance)}ft)`
-      );
-      return;
-    }
-
     if (attackData?.techniqueKey && isCanonicalMinotaurActor(effectiveAttacker)) {
       const techniqueIntent = createCanonicalMinotaurTechniqueIntent({
         techniqueKey: attackData.techniqueKey,
@@ -30007,10 +29996,14 @@ function CombatPage({ characters = [] }) {
     // Classify attack type early so it stays in scope for later combat resolution.
     const weaponName = attackData?.name || "";
     const isRangedWeapon = isCanonicalRangedAttackData(attackData);
-    const ammoType = attackData?.ammunition;
+    const canonicalRangedWeaponProfile = isRangedWeapon
+      ? normalizeCanonicalRangedWeaponProfile(attackData?.weapon || attackData)
+      : attackData;
+    const ammoType = canonicalRangedWeaponProfile?.ammunition;
     const requiresAmmo = Boolean(ammoType && ammoType !== "shuman" && isRangedWeapon);
     const isProjectileAttack = isRangedWeapon;
     let rangedAttackRangeProfile = null;
+    let canonicalRangedAdmission = null;
     let ammoContext = null;
 
     // Check range and line of sight for attacks
@@ -30033,31 +30026,9 @@ function CombatPage({ characters = [] }) {
           ? distanceOverride
           : calculateDistance(attackerPos, defenderPos);
 
-      // Check line of sight if terrain is set - ONLY for player characters
-      if (combatTerrain && attacker.type === "player") {
-        // Note: LOS calculation hastaminans here, obstacles are generated by TacticalMap
-        // For now, we'll do a basic distance check - can be enhanced later with proper LOS
-        const attackDistance = calculateDistance(attackerPos, defenderPos);
-
-        // Apply visibility modifier if distance is very long in dense terrain
-        if (combatTerrain.terrainData && attackDistance > 60) {
-          const visibilityMod = combatTerrain.terrainData.visibilityModifier || 1.0;
-          if (visibilityMod < 0.5) {
-            const losResult = calculateLineOfSight(
-              attackerPos,
-              defenderPos,
-              { obstacles: [] }
-            );
-
-            if (!losResult.hasLineOfSight) {
-              addLog(`${attacker.name} cannot clearly see ${defender.name} through the dense ${combatTerrain.terrainData.name.toLowerCase()}!`, "info");
-              return; // Block the attack if player can't see target
-            }
-          }
-        }
-      }
-
-      // Use proper weapon range validation
+      // Projectile attacks use the same canonical admission authority as
+      // overwatch and hunting. Melee and extended-melee continue through the
+      // generic weapon-range helper below.
       const vSepFt = Math.abs((getAltitude(attacker) || 0) - (getAltitude(defender) || 0));
       const isRangedForRangeCheck = isCanonicalRangedAttackData(attackData);
       const distanceForRangeCheck = isRangedForRangeCheck ? Math.hypot(distance, vSepFt) : distance;
@@ -30075,6 +30046,91 @@ function CombatPage({ characters = [] }) {
           && !defender.unconscious
           && Number(defender.currentHP ?? 1) > 0
         );
+        const liveAttackerForAmmo = (fightersRef.current || []).find((fighter) => (
+          String(fighter?.id) === String(attacker?.id)
+        )) || attackerInArray || attacker;
+        const normalizedAmmunitionState = normalizeCanonicalAmmunitionState(
+          liveAttackerForAmmo,
+          canonicalRangedWeaponProfile || attackData?.weapon || attackData,
+        );
+        const inventoryAmmunitionCount = requiresAmmo
+          ? getInventoryAmmoCount(liveAttackerForAmmo, ammoType)
+          : null;
+        const admissionAmmunitionState = normalizedAmmunitionState && inventoryAmmunitionCount != null
+          ? {
+              ...normalizedAmmunitionState,
+              current: inventoryAmmunitionCount,
+              maximum: Math.max(normalizedAmmunitionState.maximum || 0, inventoryAmmunitionCount),
+            }
+          : normalizedAmmunitionState;
+        const lineOfSight = canAISeeTargetAsymmetric(
+          attacker,
+          defender,
+          livePositions,
+          combatTerrain,
+          { requireLineOfSight: true },
+        );
+        const activeTurnActorId = bonusModifiers?.allowOutOfTurnAttack
+          ? attacker.id
+          : (liveRosterForThreat?.[turnIndexRef.current]?.id || attacker.id);
+        canonicalRangedAdmission = validateCanonicalRangedAttack({
+          actor: liveAttackerForAmmo,
+          target: defender,
+          weaponProfile: canonicalRangedWeaponProfile,
+          ammunitionState: admissionAmmunitionState,
+          actionToken: attackActionId,
+          activeActionToken: activeAttackActionIdRef.current,
+          activeActorId: activeTurnActorId,
+          distanceFeet: distanceForRangeCheck,
+          lineOfSight,
+          obstruction: !lineOfSight,
+          firingIntoMelee: attackerThreatened,
+          targetLegal: canTargetForAction(attacker, defender, "attack"),
+          hostileTarget: canTargetForAction(attacker, defender, "attack"),
+          executionContext: {
+            source: attackSource,
+            controlMode: getFighterControlMode(attacker),
+            allowOutOfTurnAttack: bonusModifiers?.allowOutOfTurnAttack === true,
+          },
+        });
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.VALIDATION,
+          eventType: canonicalRangedAdmission.accepted
+            ? "canonical-ranged-admission-accepted"
+            : "canonical-ranged-admission-rejected",
+          level: canonicalRangedAdmission.accepted ? "info" : "warning",
+          type: "debug",
+          actorId: attacker.id,
+          targetId: defender.id,
+          executionKey: attackActionId,
+          source: "canonical-ranged-attack-entry",
+          message:
+            `canonical ranged admission: accepted=${canonicalRangedAdmission.accepted} ` +
+            `reason=${canonicalRangedAdmission.reason || "accepted"} ` +
+            `rangeBand=${canonicalRangedAdmission.rangeBand} ` +
+            `distance=${canonicalRangedAdmission.distanceFeet}`,
+          data: canonicalRangedAdmission,
+        }, canonicalRangedAdmission.accepted ? "debug" : "warning");
+        if (!canonicalRangedAdmission.accepted) {
+          addLog(
+            `${attacker.name} cannot use ${attackData?.name || "a ranged weapon"}: ` +
+            `${canonicalRangedAdmission.reason}.`,
+            "warning",
+          );
+          const automatedActionBurned = burnFailedAutomatedActionAndEnd(
+            canonicalRangedAdmission.reason || "ranged admission rejected",
+          );
+          if (
+            !automatedActionBurned
+            && effectiveAttackerType === "player"
+            && !aiControlEnabledRef.current
+            && !processingPlayerAIRef.current
+          ) {
+            clearManualAttackAbortState({ clearSelectedTarget: false });
+          }
+          return canonicalRangedAdmission;
+        }
         rangedAttackRangeProfile = getRangedAttackRangeModifier({
           actor: attacker,
           attack: attackData,
@@ -30119,15 +30175,30 @@ function CombatPage({ characters = [] }) {
           ? "technique"
           : null;
 
-      const rangeValidation = validateWeaponRange(
-        attacker,
-        defender,
-        attackData,
-        distanceForRangeCheck,
-        attackerPos,
-        defenderPos,
-        actionTypeForValidation
-      );
+      const rangeValidation = isRangedForRangeCheck
+        ? {
+            canAttack: canonicalRangedAdmission?.accepted === true,
+            reason: canonicalRangedAdmission?.reason || "canonical-ranged-admission",
+            maxRange: Number(
+              attackData?.longRangeFeet
+              ?? attackData?.rangeProfile?.long
+              ?? attackData?.maxRange
+              ?? attackData?.range,
+            ),
+            rangeInfo:
+              `${canonicalRangedAdmission?.rangeBand || "unknown"} projectile ` +
+              `(${Math.round(distanceForRangeCheck)}ft)`,
+            shouldEndTurn: canonicalRangedAdmission?.accepted !== true,
+          }
+        : validateWeaponRange(
+            attacker,
+            defender,
+            attackData,
+            distanceForRangeCheck,
+            attackerPos,
+            defenderPos,
+            actionTypeForValidation,
+          );
 
       // Auto-dive support: flying predator birds (e.g., hawk) can descend-and-attack in a single action.
       // This prevents the "hover above target forever" stalemate by converting a vertical gap into a dive attack.
@@ -30219,7 +30290,13 @@ function CombatPage({ characters = [] }) {
           return;
         }
         // Decrement hastaminans AFTER roll resolution (so projectile misfires don't spend ammo).
-        ammoContext = { ammoType, currentAmmo, weaponName, tacticalProjectilePreReleased: Boolean(bonusModifiers?.tacticalProjectilePreReleased) };
+        ammoContext = {
+          ammoType,
+          currentAmmo,
+          weaponName,
+          tacticalProjectilePreReleased: Boolean(bonusModifiers?.tacticalProjectilePreReleased),
+          canonicalRangedAdmission,
+        };
       }
     }
 
@@ -30233,7 +30310,23 @@ function CombatPage({ characters = [] }) {
           ? { accepted: true, projectileAuthorized: true, spent: 0, actor: attackerInArray || attacker, record, events: [], duplicate: true }
           : { accepted: false, projectileAuthorized: false, spent: 0, actor: attackerInArray || attacker, reason: "pre-released-projectile-identity-missing", events: [] };
       }
-      const result = spendAmmunitionOnce({
+      const canonicalClaim = projectileReleased && ammoContext.canonicalRangedAdmission?.ammunitionState
+        ? claimCanonicalAmmunitionSpend({
+            ammunitionState: ammoContext.canonicalRangedAdmission.ammunitionState,
+            weaponProfile: canonicalRangedWeaponProfile || attackData?.weapon || attackData,
+            actionToken: attackActionId,
+            activeActionToken: activeAttackActionIdRef.current,
+          })
+        : null;
+      if (canonicalClaim && !canonicalClaim.accepted) {
+        return {
+          ...canonicalClaim,
+          projectileAuthorized: false,
+          actor: attackerInArray || attacker,
+          events: [],
+        };
+      }
+      let result = spendAmmunitionOnce({
         registry: canonicalAmmunitionRegistryRef.current,
         actor: attackerInArray || attacker,
         actorId: attacker.id,
@@ -30243,6 +30336,30 @@ function CombatPage({ characters = [] }) {
         projectileReleased: Boolean(projectileReleased),
         source: attackSource,
       });
+      if (result.accepted && projectileReleased && ammoContext.canonicalRangedAdmission?.ammunitionState) {
+        const canonicalCommit = commitCanonicalAmmunitionSpend({
+          ammunitionState: ammoContext.canonicalRangedAdmission.ammunitionState,
+          weaponProfile: canonicalRangedWeaponProfile || attackData?.weapon || attackData,
+          claim: canonicalClaim.claim,
+        });
+        if (!canonicalCommit.accepted) {
+          return {
+            ...canonicalCommit,
+            projectileAuthorized: false,
+            actor: attackerInArray || attacker,
+            events: result.events || [],
+          };
+        }
+        result = {
+          ...result,
+          actor: {
+            ...result.actor,
+            ammunitionState: canonicalCommit.ammunitionState,
+          },
+          canonicalClaim,
+          canonicalCommit,
+        };
+      }
       for (const ammoEvent of result.events || []) {
         addLog?.({
           audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
@@ -33551,11 +33668,14 @@ function CombatPage({ characters = [] }) {
         }
 
         const defenderArmorProfile = normalizeArmorProfile(defender);
-        // Physical arrows and bolts must resolve armor contact before bodily damage.
+        // Physical arrows, bolts, and thrown weapons must resolve armor contact
+        // before bodily damage while retaining their distinct weapon profiles.
         // Do not classify every ranged effect as a projectile: spells and psionics may
         // use their own impact rules even when their attack type is "ranged".
         const isCanonicalProjectileArmorContact =
           isProjectileAttack === true && isBowOrCrossbowAttackData(attackData);
+        const isCanonicalThrownArmorContact =
+          isProjectileAttack === true && isCanonicalPhysicalThrownWeapon(attackData);
         const isCanonicalKnifeArmorContact =
           !isRangedAttack && isKnifeOrDaggerAttackData(attackData);
         const shouldResolveArmorContact =
@@ -33563,6 +33683,7 @@ function CombatPage({ characters = [] }) {
           defenderArmorProfile?.rigidCoverage === true &&
           (
             isCanonicalProjectileArmorContact ||
+            isCanonicalThrownArmorContact ||
             isCanonicalKnifeArmorContact ||
             canonicalMinotaurTechniqueIntent?.directHpMutationAllowed === false ||
             (
@@ -33580,7 +33701,7 @@ function CombatPage({ characters = [] }) {
           );
         let armorContactResult = null;
         let layeredArmorImpact = null;
-        let preDamageImpact = isCanonicalProjectileArmorContact
+        let preDamageImpact = isCanonicalProjectileArmorContact || isCanonicalThrownArmorContact
           ? canonicalProjectileImpact
           : null;
 
@@ -33602,12 +33723,15 @@ function CombatPage({ characters = [] }) {
             canonicalMinotaurTechniqueIntent?.techniqueKey ||
             (isCanonicalProjectileArmorContact
               ? "projectile"
+              : isCanonicalThrownArmorContact
+                ? getCanonicalThrownArmorMode(attackData) || "physical-weapon-throw"
               : isCanonicalKnifeArmorContact
                 ? attackData?.attackMode || "knife-thrust"
                 : "longsword-cut");
           if (
             !hasArmoredSelectorMetadata &&
             !isCanonicalProjectileArmorContact &&
+            !isCanonicalThrownArmorContact &&
             !isCanonicalKnifeArmorContact
           ) {
             addLog({
@@ -33795,11 +33919,20 @@ function CombatPage({ characters = [] }) {
 
           const shieldInterceptedForLayeredImpact =
             autoBlockUsed || String(defenseType || "").toLowerCase().includes("block");
+          const thrownLayeredImpactMetadata = Boolean(
+            attackData?.techniqueKey ||
+            attackData?.impactMassKg ||
+            attackData?.projectileMassKg ||
+            attackData?.effectiveMassKg ||
+            attackData?.impactVelocityMps ||
+            attackData?.projectileVelocityMps
+          );
           if (
             !shieldInterceptedForLayeredImpact &&
             armorContactResult &&
             armorContactResult.gapReached !== true &&
-            defenderArmorProfile?.rigidCoverage === true
+            defenderArmorProfile?.rigidCoverage === true &&
+            (!isCanonicalThrownArmorContact || thrownLayeredImpactMetadata)
           ) {
             const layeredHitLocation =
               armorContactResult.hitLocation ||
@@ -34421,21 +34554,28 @@ function CombatPage({ characters = [] }) {
           attackData?.armorTechnique ||
           attackData?.attackMode ||
           canonicalMinotaurTechniqueIntent?.techniqueKey ||
-          (isCanonicalProjectileArmorContact ? "projectile" : null);
+          (isCanonicalProjectileArmorContact
+            ? "projectile"
+            : isCanonicalThrownArmorContact
+              ? getCanonicalThrownArmorMode(attackData) || "physical-weapon-throw"
+              : null);
         const armorContactRequired =
           shouldResolveArmorContact &&
           (
             isCanonicalProjectileArmorContact ||
+            isCanonicalThrownArmorContact ||
             isCanonicalKnifeArmorContact ||
             canonicalMinotaurTechniqueIntent?.directHpMutationAllowed === false ||
             isArmoredLongswordTechnique(requiredArmorTechnique)
           );
 
-        // Fail closed: an arrow or bolt cannot proceed to HP mutation merely because
-        // an armor-contact result was absent or a future refactor bypassed the resolver.
+        // Fail closed: an arrow, bolt, or thrown physical weapon cannot proceed
+        // to HP mutation merely because armor contact was bypassed.
         if (armorContactRequired && !armorContactResult) {
           const requiredContactKind = isCanonicalProjectileArmorContact
             ? "projectile"
+            : isCanonicalThrownArmorContact
+              ? "thrown-physical-weapon"
             : isCanonicalKnifeArmorContact
               ? "knife-vs-plate"
               : canonicalMinotaurTechniqueIntent?.directHpMutationAllowed === false
@@ -34463,6 +34603,7 @@ function CombatPage({ characters = [] }) {
                 attackData?.name ||
                 null,
               isProjectileAttack: isCanonicalProjectileArmorContact,
+              isThrownPhysicalAttack: isCanonicalThrownArmorContact,
               isKnifeAttack: isCanonicalKnifeArmorContact,
             },
           }, "error");
@@ -36001,6 +36142,8 @@ function CombatPage({ characters = [] }) {
     closeCombatChoices,
     isEvilAlignment,
     isPredatorBird,
+    canAISeeTargetAsymmetric,
+    getFighterControlMode,
     spawnProjectile,
     validateWeaponRange,
     clearManualAttackAbortState,
@@ -37398,6 +37541,53 @@ function CombatPage({ characters = [] }) {
       };
     };
 
+    const executePlayerAICrossbowReload = (actor, weaponProfile, reloadMeta = {}) => {
+      const liveRoster = fightersRef.current || [];
+      const liveActor = liveRoster.find((fighter) => String(fighter.id) === String(actor?.id));
+      const activeFighter = liveRoster[turnIndexRef.current];
+      const normalizedWeapon = normalizeCanonicalRangedWeaponProfile(weaponProfile);
+      const ammunitionState = liveActor
+        ? normalizeCanonicalAmmunitionState(liveActor, normalizedWeapon)
+        : null;
+      if (
+        normalizedWeapon?.weaponFamily !== "crossbow"
+        || ammunitionState?.chambered === true
+        || ammunitionState?.reloadState === "loaded"
+      ) return { handled: false, accepted: false, reason: "reload-not-required" };
+      const stale =
+        combatOverRef.current ||
+        combatEndCheckRef.current ||
+        !combatActiveRef.current ||
+        playerAITurnTokenRef.current !== playerAITurnToken ||
+        currentTurnTokenRef.current !== capturedTurnToken ||
+        activeFighter?.id !== startFighterId ||
+        !liveActor;
+      if (stale) {
+        addLog(`player AI reload blocked: actor=${actor?.name || "unknown"} reason=stale-action-owner`, "warning");
+        return { handled: true, accepted: false, reason: "stale-action-owner" };
+      }
+      const actionToken = [
+        capturedTurnToken || "player-ai-turn",
+        liveActor.id,
+        "reload",
+        Number(liveActor.remainingActions ?? 0),
+      ].join(":");
+      const result = executeCanonicalCrossbowReloadAction({
+        actorId: liveActor.id,
+        weaponProfile: normalizedWeapon,
+        actionToken,
+        activeActionToken: actionToken,
+        source: reloadMeta.source || "player-ai-canonical-crossbow-reload",
+      });
+      playerAIActionScheduledRef.current = true;
+      if (!result.accepted) {
+        scheduleEndTurn(0, "player-ai-crossbow-reload-rejected");
+        return { ...result, handled: true };
+      }
+      scheduleEndTurn(0, "player-ai-crossbow-reload");
+      return { ...result, handled: true };
+    };
+
     const clearPlayerAIContinuationAttack = (attackActionId, reason = "continuation-failed") => {
       if (!doesPlayerAiContinuationOwnAttack(activeAttackActionIdRef.current, attackActionId)) return false;
       activeAttackActionIdRef.current = null;
@@ -38660,6 +38850,7 @@ function CombatPage({ characters = [] }) {
       getFighterfocus,
       // Attack & combat
       attack: executePlayerAIAttack,
+      reloadCrossbow: executePlayerAICrossbowReload,
       createAttackActionGrant,
       createAttackExecutionKey,
       clearPlayerAIContinuationAttack,
@@ -40251,6 +40442,43 @@ function CombatPage({ characters = [] }) {
       return false;
     };
 
+    const executeEnemyAICrossbowReload = (actor, weaponProfile, reloadMeta = {}) => {
+      const liveActor = (fightersRef.current || fighters).find((fighter) => String(fighter.id) === String(actor?.id));
+      const normalizedWeapon = normalizeCanonicalRangedWeaponProfile(weaponProfile);
+      const ammunitionState = liveActor
+        ? normalizeCanonicalAmmunitionState(liveActor, normalizedWeapon)
+        : null;
+      if (
+        normalizedWeapon?.weaponFamily !== "crossbow"
+        || ammunitionState?.chambered === true
+        || ammunitionState?.reloadState === "loaded"
+      ) return { handled: false, accepted: false, reason: "reload-not-required" };
+      if (!isEnemyTurnTokenStillCurrent("enemy-ai-crossbow-reload")) {
+        return { handled: true, accepted: false, reason: "stale-action-owner" };
+      }
+      if (!commitEnemyTurnAction(liveActor, "RELOAD_CROSSBOW")) {
+        return { handled: true, accepted: false, reason: "duplicate-action-commit" };
+      }
+      const actionToken = enemyActionCommittedSliceKeyRef.current;
+      const result = executeCanonicalCrossbowReloadAction({
+        actorId: liveActor.id,
+        weaponProfile: normalizedWeapon,
+        actionToken,
+        activeActionToken: actionToken,
+        source: reloadMeta.source || "enemy-ai-canonical-crossbow-reload",
+      });
+      const latestActor = (fightersRef.current || []).find((fighter) => fighter.id === liveActor.id) || liveActor;
+      completeCanonicalEnemyAction({
+        actorId: liveActor.id,
+        turnToken: currentTurnTokenRef.current,
+        completedActionKey: enemyActionCommittedSliceKeyRef.current,
+        actionSource: result.accepted ? "enemy-ai-crossbow-reload" : "enemy-ai-crossbow-reload-rejected",
+        remainingActions: Number(latestActor.remainingActions ?? 0) || 0,
+        explicitPass: !result.accepted,
+      });
+      return { ...result, handled: true };
+    };
+
     const guardedEnemyAttack = (...args) => {
       if (!isEnemyTurnTokenStillCurrent("modular-ai-attack")) {
         processingEnemyTurnRef.current = false;
@@ -40603,6 +40831,7 @@ function CombatPage({ characters = [] }) {
         onNoHostilesRemaining: () => endCombatIfVictoryResolved(fightersRef.current ?? liveFighters),
         // Attack & combat
         attack: guardedEnemyAttack,
+        reloadCrossbow: executeEnemyAICrossbowReload,
         executeGrapple: (actor, targetActor, requestedActionType = "grapple", armoredActionPlan = null, admission = null) => {
           if (admission?.continuationAuthorization) {
             emitActionContinuationReceiptHop("enemy-action-executor", admission.continuationAuthorization, {
@@ -47743,6 +47972,35 @@ function CombatPage({ characters = [] }) {
       armorCatalog: availableArmors.filter((item) => item?.name !== "None"),
       preserveNaturalAttacks: !isHumanoid(combatantData),
     });
+    const selectedWeaponData = availableWeapons.find(
+      (item) => item?.name === weaponToEquip
+    );
+    const selectedAmmunitionName = selectedWeaponData?.ammunition;
+    const alreadyHasSelectedAmmunition = (newFighter.inventory || []).some(
+      (item) =>
+        String(item?.name || "").trim().toLowerCase() ===
+        String(selectedAmmunitionName || "").trim().toLowerCase()
+    );
+    if (
+      selectedAmmunitionName &&
+      selectedAmmunitionName !== "shuman" &&
+      ammoToGive > 0 &&
+      !alreadyHasSelectedAmmunition
+    ) {
+      newFighter.inventory = [
+        ...(newFighter.inventory || []),
+        {
+          name: selectedAmmunitionName,
+          type: "ammunition",
+          category: "ammunition",
+          quantity: ammoToGive,
+        },
+      ];
+      addLog(
+        `${newFighter.name} receives ${ammoToGive} ${selectedAmmunitionName}`,
+        "info"
+      );
+    }
     if (newFighter.equipmentValidation?.errors?.length) {
       newFighter.equipmentValidation.errors.forEach((message) => {
         addLog(`${newFighter.name}: ${message}`, "warning");
@@ -48211,6 +48469,140 @@ function CombatPage({ characters = [] }) {
     };
   }
 
+  function executeCanonicalCrossbowReloadAction({
+    actorId,
+    weaponProfile = null,
+    actionToken,
+    activeActionToken = actionToken,
+    source = "canonical-crossbow-reload",
+  } = {}) {
+    const roster = Array.isArray(fightersRef.current) && fightersRef.current.length > 0
+      ? fightersRef.current
+      : fighters;
+    const liveActor = roster.find((fighter) => String(fighter?.id) === String(actorId));
+    const activeActor = roster[turnIndexRef.current ?? turnIndex] || null;
+    const equippedCrossbow = getEquistaminadWeapons(liveActor || {}).find((weapon) => (
+      normalizeCanonicalRangedWeaponProfile(weapon)?.weaponFamily === "crossbow"
+    ));
+    const normalizedWeapon = normalizeCanonicalRangedWeaponProfile(
+      equippedCrossbow || weaponProfile || null
+    );
+    const ammunitionState = liveActor && normalizedWeapon
+      ? normalizeCanonicalAmmunitionState(liveActor, normalizedWeapon)
+      : null;
+    const result = completeCanonicalRangedReload({
+      actor: liveActor,
+      ammunitionState,
+      weaponProfile: normalizedWeapon,
+      actionToken,
+      activeActionToken,
+      activeActorId: activeActor?.id || null,
+      weaponAvailable: Boolean(normalizedWeapon),
+    });
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.ACTION,
+      eventType: result.eventType,
+      actorId: liveActor?.id || actorId || null,
+      executionKey: actionToken || null,
+      source,
+      message:
+        `canonical crossbow reload: accepted=${result.accepted} actor=${liveActor?.name || actorId || "unknown"} ` +
+        `reason=${result.reason || "accepted"} actionToken=${actionToken || "none"}`,
+      data: {
+        accepted: result.accepted,
+        reason: result.reason || null,
+        weaponId: normalizedWeapon?.weaponId || null,
+        actionCost: result.actionCost || 0,
+        staminaCost: result.staminaCost || 0,
+        ammunitionConsumed: result.ammunitionConsumed || 0,
+        chamberedBefore: ammunitionState?.chambered === true,
+        chamberedAfter: result.ammunitionState?.chambered === true,
+      },
+    }, result.accepted ? "debug" : "warning");
+    if (!result.accepted || !liveActor) return { ...result, handled: false };
+
+    const remainingActionsBefore = Number(liveActor.remainingActions ?? liveActor.actionsRemaining ?? 0) || 0;
+    const remainingActionsAfter = Math.max(0, remainingActionsBefore - result.actionCost);
+    const updatedActor = {
+      ...liveActor,
+      ammunitionState: result.ammunitionState,
+      remainingActions: remainingActionsAfter,
+    };
+    commitFighters((current) => current.map((fighter) => (
+      String(fighter.id) === String(liveActor.id) ? updatedActor : fighter
+    )));
+    addLog(
+      `${liveActor.name} reloads ${normalizedWeapon?.name || "the crossbow"}; ` +
+      `actions ${remainingActionsBefore} -> ${remainingActionsAfter}, stamina unchanged, bolts unchanged.`,
+      "info",
+    );
+    return {
+      ...result,
+      handled: true,
+      actor: updatedActor,
+      remainingActionsBefore,
+      remainingActionsAfter,
+      chamberMutationCount: 1,
+      actionSpendCount: 1,
+      staminaSpendCount: 0,
+      ammunitionMutationCount: 0,
+    };
+  }
+
+  function applyManualPublicCrossbowReload({ actorId, selectedCombatAction } = {}) {
+    const currentCommandTurn = commandTurnEntry || manualPublicTurnOrder[manualPublicTurnIndex] || null;
+    if (!currentCommandTurn || String(actorId) !== String(currentCommandTurn.id)) {
+      const message = "Reload can only be used by the current turn combatant.";
+      addLog(commandBlockedLog({ action: "Reload", reason: message }), "warning");
+      return { ok: false, accepted: false, reason: "stale-action-owner", message };
+    }
+    const liveActor = (fightersRef.current || fighters).find((fighter) => String(fighter.id) === String(actorId));
+    const weaponId = selectedCombatAction?.metadata?.weaponId;
+    const weaponProfile = getEquistaminadWeapons(liveActor || {}).find((weapon) => {
+      const normalized = normalizeCanonicalRangedWeaponProfile(weapon);
+      return String(normalized?.weaponId || "") === String(weaponId || "")
+        || (!weaponId && normalized?.weaponFamily === "crossbow");
+    });
+    const actionToken = [
+      initiativeTurnIdRef.current || currentTurnTokenRef.current || "manual-turn",
+      actorId,
+      "reload",
+      Number(liveActor?.remainingActions ?? currentCommandTurn.remainingActions ?? 0),
+    ].join(":");
+    const result = executeCanonicalCrossbowReloadAction({
+      actorId,
+      weaponProfile,
+      actionToken,
+      activeActionToken: actionToken,
+      source: "manual-canonical-crossbow-reload",
+    });
+    if (!result.accepted) {
+      const message = `Reload rejected: ${result.reason}.`;
+      addLog(commandBlockedLog({ action: "Reload", reason: message }), "warning");
+      return { ...result, ok: false, message };
+    }
+    if (commandTurnBridge.source === "manual-public-turn-order") {
+      setManualPublicTurnOrder((current) => current.map((row, index) => (
+        index === manualPublicTurnIndex
+          ? {
+              ...row,
+              ammunitionState: result.ammunitionState,
+              remainingActions: result.remainingActionsAfter,
+            }
+          : row
+      )));
+    }
+    if (result.remainingActionsAfter <= 0 && combatActiveRef.current) {
+      scheduleEndTurn(0, "manual-canonical-crossbow-reload");
+    }
+    return {
+      ...result,
+      ok: true,
+      message: `${result.actor.name} reloads successfully.`,
+    };
+  }
+
   function applyManualPublicRecovery({ actorId, action, recoveryAmount } = {}) {
     const currentCommandTurn = commandTurnEntry || manualPublicTurnOrder[manualPublicTurnIndex] || null;
     if (!currentCommandTurn || String(actorId) !== String(currentCommandTurn.id)) {
@@ -48544,6 +48936,48 @@ function CombatPage({ characters = [] }) {
     return Number.isFinite(value) && value > 0 ? value : 0;
   };
 
+  const reconcileProjectileAmmunitionForCombat = (fighter, source = "combat-start") => {
+    if (!fighter || typeof fighter !== "object") return fighter;
+    let next = ensureConfiguredStartingAmmo(fighter, {
+      source,
+      preserveExisting: true,
+      log: ({ actor, weaponName, ammoType, starting, source: ammoSource }) => addLog(
+        `ammo initialized: actor=${actor?.name || "Unknown"} weapon=${weaponName} ammoType=${ammoType} starting=${starting} source=${ammoSource}`,
+        "debug",
+      ),
+    });
+    const rangedWeaponProfile = [
+      ...(next.equistaminadWeapons || []),
+      ...(next.attacks || []),
+      next.weapon,
+      next.equistaminadWeapon,
+    ]
+      .filter(Boolean)
+      .map((weapon) => normalizeCanonicalRangedWeaponProfile(weapon))
+      .find((weapon) => weapon?.deliveryType === "projectile");
+    if (!rangedWeaponProfile) return next;
+    const previousAmmunitionState = next.ammunitionState;
+    const inventoryDerivedState = normalizeCanonicalAmmunitionState(
+      { ...next, ammunitionState: null },
+      rangedWeaponProfile,
+    );
+    if (!inventoryDerivedState) return next;
+    const preservesChamber = (
+      String(previousAmmunitionState?.weaponId || "") ===
+      String(inventoryDerivedState.weaponId || "")
+    ) && previousAmmunitionState?.chambered === true;
+    return {
+      ...next,
+      ammunitionState: {
+        ...inventoryDerivedState,
+        chambered: preservesChamber,
+        reloadState: rangedWeaponProfile.weaponFamily === "crossbow"
+          ? (preservesChamber ? "loaded" : "reload-required")
+          : "ready",
+      },
+    };
+  };
+
   const cleanFighterForNewCombat = (fighter) => {
     const copy = normalizeStandardSecondaryBladeLoadout(cloneCombatData(fighter || {}));
     const maxHP = getMaxFighterHP(copy);
@@ -48680,8 +49114,11 @@ function CombatPage({ characters = [] }) {
       },
     );
 
-    return enforceExplicitEquipmentAuthority(
-      normalizeStandardSecondaryBladeLoadout(resetFighter)
+    return reconcileProjectileAmmunitionForCombat(
+      enforceExplicitEquipmentAuthority(
+        normalizeStandardSecondaryBladeLoadout(resetFighter)
+      ),
+      "combat-start",
     );
   };
 
@@ -48999,10 +49436,13 @@ function CombatPage({ characters = [] }) {
     });
 
     updatedFighters = updatedFighters.map((fighter) =>
-      enforceExplicitEquipmentAuthority(
-        normalizeStandardSecondaryBladeLoadout(
-          normalizeCombatantForBattle(normalizeFighterSideId(fighter, { log: true }))
-        )
+      reconcileProjectileAmmunitionForCombat(
+        enforceExplicitEquipmentAuthority(
+          normalizeStandardSecondaryBladeLoadout(
+            normalizeCombatantForBattle(normalizeFighterSideId(fighter, { log: true }))
+          )
+        ),
+        "combat-start-after-schema",
       )
     );
     updatedFighters.forEach((fighter) => {
@@ -50036,6 +50476,33 @@ function CombatPage({ characters = [] }) {
           return;
         }
         break;
+      case "Reload": {
+        const liveActor = (fightersRef.current || fighters).find((fighter) => fighter.id === currentFighter.id) || currentFighter;
+        const crossbow = getEquistaminadWeapons(liveActor)
+          .map((weapon) => normalizeCanonicalRangedWeaponProfile(weapon))
+          .find((weapon) => weapon?.weaponFamily === "crossbow");
+        const actionToken = [
+          initiativeTurnIdRef.current || currentTurnTokenRef.current || "manual-turn",
+          liveActor.id,
+          "reload",
+          Number(liveActor.remainingActions ?? 0),
+        ].join(":");
+        const result = executeCanonicalCrossbowReloadAction({
+          actorId: liveActor.id,
+          weaponProfile: crossbow,
+          actionToken,
+          activeActionToken: actionToken,
+          source: "manual-combat-crossbow-reload",
+        });
+        if (!result.accepted) {
+          addLog(`${liveActor.name} cannot reload: ${result.reason}.`, "warning");
+          return;
+        }
+        if (result.remainingActionsAfter <= 0) {
+          scheduleEndTurn(0, "manual-combat-crossbow-reload");
+        }
+        return;
+      }
       case "Overwatch Shot":
         if (!weaponToExecute) {
           addLog(`${currentFighter.name} wants to overwatch but has no weapon selected!`, "error");
@@ -56284,6 +56751,21 @@ function CombatPage({ characters = [] }) {
                                 combatOver={!combatActive}
                                 disabledReason={commandCenterAttackGate.reason}
                               />
+                            )}
+                            {activeSelectedCombatAction?.type === "reload" && (
+                              <Button
+                                colorScheme="blue"
+                                isDisabled={!commandManualTurnActive || !activeSelectedCombatAction.enabled}
+                                onClick={() => {
+                                  const result = applyManualPublicCrossbowReload({
+                                    actorId: commandActor?.id,
+                                    selectedCombatAction: activeSelectedCombatAction,
+                                  });
+                                  if (result?.ok) setSelectedCombatAction(null);
+                                }}
+                              >
+                                {activeSelectedCombatAction.displayLabel || activeSelectedCombatAction.name || "Reload Crossbow"}
+                              </Button>
                             )}
                             {activeSelectedCombatAction?.type === "recover" && (
                               <RecoverActionHandler

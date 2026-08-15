@@ -156,7 +156,9 @@ export function ensureConfiguredStartingAmmo(character = {}, {
 /** Get inventory item name aliases that satisfy an ammoType. */
 export function getAmmoAliases(ammoType) {
   const key = normName(ammoType);
-  return AMMO_NAME_ALIASES[key] || [key];
+  return AMMO_NAME_ALIASES[key]
+    || Object.values(AMMO_NAME_ALIASES).find((aliases) => aliases.includes(key))
+    || [key];
 }
 
 /** Sum ammo across stacks in inventory. */
@@ -214,11 +216,20 @@ export function initializeAmmo(characters) {
 
     const ammoTypesNeeded = new Set();
 
-    for (const item of char.inventory) {
-      const w = getWeaponData(item);
-      const ammoType = normName(w?.ammunition);
-      const hasRange = Number.isFinite(w?.maxRange) || Number.isFinite(w?.range);
-      if (!ammoType || ammoType === "shuman" || !hasRange) continue;
+    const weaponCandidates = [
+      ...char.inventory,
+      ...(Array.isArray(char.equistaminadWeapons) ? char.equistaminadWeapons : []),
+      ...(Array.isArray(char.equippedWeapons) ? char.equippedWeapons : []),
+      ...(Array.isArray(char.attacks) ? char.attacks : []),
+      char.weapon,
+      char.equistaminadWeapon,
+    ].filter(Boolean);
+    for (const item of weaponCandidates) {
+      const w = getWeaponData(item) || item;
+      const ammoType = normName(w?.ammunition || w?.ammunitionType || w?.ammoType);
+      const hasRange = Number.isFinite(w?.maxRange) || Number.isFinite(w?.range) || Number.isFinite(w?.normalRangeFeet);
+      const rangedName = /bow|crossbow|sling|dart/.test(normName(w?.name));
+      if (!ammoType || ammoType === "shuman" || (!hasRange && !rangedName)) continue;
       ammoTypesNeeded.add(ammoType);
     }
 

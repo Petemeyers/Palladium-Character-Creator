@@ -3,8 +3,11 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync("src/pages/CombatPage.jsx", "utf8");
 
-const resolverImport = source.indexOf('import { resolveArmorContact } from "../utils/combat/armorContactResolver.js"');
-assert.ok(resolverImport >= 0, "CombatPage should import the authoritative armor-contact resolver");
+assert.match(
+  source,
+  /import\s*\{[\s\S]*?\bresolveArmorContact\b[\s\S]*?\}\s*from\s*"\.\.\/utils\/combat\/armorContactResolver\.js"/,
+  "CombatPage should import the authoritative armor-contact resolver",
+);
 
 const resolveIndex = source.indexOf("armorContactResult = resolveArmorContact");
 const damageRollIndex = source.indexOf("damageRollResult = CryptoSecureDice.parseAndRoll", resolveIndex);

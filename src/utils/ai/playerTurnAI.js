@@ -492,6 +492,7 @@ export async function runPlayerTurnAI(player, context) {
     getFighterfocus,
     // Attack & combat
     attack,
+    reloadCrossbow,
     createAttackActionGrant,
     createAttackExecutionKey,
     clearPlayerAIContinuationAttack,
@@ -3663,6 +3664,27 @@ export async function runPlayerTurnAI(player, context) {
   }
 
   if (target && selectedAttack) {
+    const normalizedSelectedName = String(selectedAttack?.name || selectedAttack?.weapon?.name || "").toLowerCase();
+    const selectedWeaponFamily = String(
+      selectedAttack?.weaponFamily || selectedAttack?.weapon?.weaponFamily || ""
+    ).toLowerCase();
+    if (
+      typeof reloadCrossbow === "function"
+      && (selectedWeaponFamily === "crossbow" || normalizedSelectedName.includes("crossbow"))
+    ) {
+      const reloadResult = await reloadCrossbow(player, selectedAttack.weapon || selectedAttack, {
+        source: "player-ai-crossbow-reload-selection",
+      });
+      if (reloadResult?.handled) {
+        markActionScheduled();
+        return createPlayerAiActionResult("reload", {
+          admitted: reloadResult.accepted === true,
+          reason: reloadResult.reason || "crossbow-reloaded",
+          terminal: true,
+          reloadResult,
+        });
+      }
+    }
     const attackerPos = positions?.[player.id];
     const defenderPos = positions?.[target.id];
     const armoredDistance = attackerPos && defenderPos && typeof calculateDistance === "function"

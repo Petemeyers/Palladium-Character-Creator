@@ -1696,6 +1696,7 @@ export function runEnemyTurnAI(enemy, context) {
     onNoHostilesRemaining,
     // Attack & combat
     attack,
+    reloadCrossbow,
     executeGrapple: executeGrappleFromContext,
     dispatchGrappleTurnAction,
     createAttackActionGrant,
@@ -4604,6 +4605,23 @@ export function runEnemyTurnAI(enemy, context) {
         };
         enemy.selectedAttack = techniqueAttack;
         selectedAttack = techniqueAttack;
+      }
+    }
+
+    const normalizedSelectedName = String(selectedAttack?.name || selectedAttack?.weapon?.name || "").toLowerCase();
+    const selectedWeaponFamily = String(
+      selectedAttack?.weaponFamily || selectedAttack?.weapon?.weaponFamily || ""
+    ).toLowerCase();
+    if (
+      typeof reloadCrossbow === "function"
+      && (selectedWeaponFamily === "crossbow" || normalizedSelectedName.includes("crossbow"))
+    ) {
+      const reloadResult = reloadCrossbow(enemy, selectedAttack.weapon || selectedAttack, {
+        source: "enemy-ai-crossbow-reload-selection",
+      });
+      if (reloadResult?.handled) {
+        processingEnemyTurnRef.current = false;
+        return;
       }
     }
 

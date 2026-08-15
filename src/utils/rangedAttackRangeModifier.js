@@ -69,6 +69,9 @@ export function isExplicitRangedAttack(attack = {}) {
 export function getRangedWeaponRange(attack = {}) {
   if (!isExplicitRangedAttack(attack)) return null;
   return parseFeet(
+    attack.longRangeFeet ??
+    attack.rangeProfile?.long ??
+    attack.maxRange ??
     attack.rangeProfile?.normal ??
     attack.rangeFt ??
     attack.rangeFeet ??
@@ -103,6 +106,15 @@ export function getRangedAttackRangeModifier({
   const isRanged = isExplicitRangedAttack(attack);
   const distance = parseFeet(distanceFt);
   const maxRangeFt = getRangedWeaponRange(attack);
+  const normalRangeFt = parseFeet(
+    attack?.normalRangeFeet ??
+    attack?.normalRangeFt ??
+    attack?.rangeProfile?.normal ??
+    attack?.rangeFt ??
+    attack?.rangeFeet ??
+    attack?.normalRange ??
+    attack?.range,
+  );
   const controlModifier = getRangedControlModifier(actor);
 
   if (!isRanged || distance === null || maxRangeFt === null || maxRangeFt <= 0) {
@@ -127,8 +139,61 @@ export function getRangedAttackRangeModifier({
     };
   }
 
-  const ratio = distance / maxRangeFt;
+  const modifierRangeFt = normalRangeFt && normalRangeFt > 0
+    ? Math.min(normalRangeFt, maxRangeFt)
+    : maxRangeFt;
+  const ratio = distance / modifierRangeFt;
   if (ratio > 1) {
+    if (distance <= maxRangeFt && maxRangeFt > modifierRangeFt) {
+      const training = actor?.rangedTrainingProfile;
+      const familyMatches = normalize(training?.weaponFamily) === normalize(attack?.weaponFamily);
+      const trainingModifier = familyMatches ? toNumber(training?.specializationBonus) ?? 0 : 0;
+      const proficiencyModifier = familyMatches ? toNumber(training?.proficiencyBonus) ?? 0 : 0;
+      const proficiencyAlreadyIncluded = familyMatches && training?.existingAttackBonusIncludesProficiency === true;
+      const aimModifier = clamp(toNumber(aimBonus) ?? 0, 0, 2);
+      const visibility = toNumber(visibilityModifier) ?? 0;
+      const shooterMovement = toNumber(shooterMovementModifier) ?? 0;
+      const targetMovement = toNumber(targetMovementModifier) ?? 0;
+      const fatigue = Math.min(0, toNumber(fatigueModifier) ?? 0);
+      const finalModifier = -4;
+      const totalModifier = finalModifier + trainingModifier + aimModifier + visibility
+        + shooterMovement + targetMovement + fatigue;
+      return {
+        isRanged: true,
+        canAttack: true,
+        distanceFt: distance,
+        normalRangeFt: modifierRangeFt,
+        maxRangeFt,
+        band: "long",
+        bandLabel: "Long Range",
+        baseModifier: finalModifier,
+        controlModifier,
+        proficiencyModifier,
+        proficiencyAlreadyIncluded,
+        trainingModifier,
+        aimModifier,
+        visibilityModifier: visibility,
+        threatenedModifier: 0,
+        threatened: Boolean(threatened),
+        shooterMovementModifier: shooterMovement,
+        targetMovementModifier: targetMovement,
+        fatigueModifier: fatigue,
+        finalModifier,
+        totalModifier,
+        components: Object.freeze({
+          proficiency: proficiencyModifier,
+          proficiencyApplied: proficiencyAlreadyIncluded ? 0 : proficiencyModifier,
+          specialization: trainingModifier,
+          range: finalModifier,
+          aim: aimModifier,
+          visibility,
+          threatenedClose: 0,
+          shooterMovement,
+          targetMovement,
+          fatigue,
+        }),
+      };
+    }
     return {
       isRanged: true,
       canAttack: false,
