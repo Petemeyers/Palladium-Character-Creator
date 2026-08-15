@@ -8,6 +8,144 @@ This project is a historical-mythic combat simulator, not a simple party-versus-
 
 When modernizing old combat systems, preserve useful working behavior even when it came from legacy or compatibility-era code. Normalize the data, migrate the feature into the current original simulation structure, and add tests before removing old paths.
 
+## Canonical Simulation-First Combat Architecture
+
+Read `game.md` before changing combat code. The combat constitution and
+canonical combat-resolution pipeline in that document are authoritative design
+direction.
+
+The project may retain generic d20 concepts where useful, but another tabletop
+RPG is not its combat specification. Dice resolve uncertainty; physical
+circumstances, equipment, anatomy, positioning, technique, and combat state
+determine what is possible and what an outcome means. Existing simulation
+systems take precedence over incompatible tabletop abstractions.
+
+Public-facing naming must remain project-owned and generic. Continue the
+existing prohibition against public-facing `5e` naming, Palladium-derived
+terminology, private rulebook terminology, or unnecessary proprietary
+tabletop vocabulary. Prefer attack resolution, defense, protection, armor
+interaction, hit location, wound, technique, tactical memory, reaction, combat
+state, and simulation engine.
+
+### One Canonical Engine
+
+This is non-negotiable:
+
+> Manual player actions, AI actions, automated simulation, and combat logging
+> must use the same canonical combat-resolution engine.
+
+Keep responsibility boundaries explicit:
+
+```text
+UI → requests actions and displays results
+AI → chooses actions
+Simulation engine → resolves outcomes
+Combat log → reports canonical outcomes
+```
+
+Do not create:
+
+- AI-only damage or hit rules
+- player-only attack shortcuts
+- duplicate contact, hit-location, armor, injury, or damage resolvers
+- separate simplified combat logic for autoplay or large battles
+- UI components that independently decide combat outcomes
+- AI selectors that calculate an alternate final combat outcome
+
+Adapters may bridge legacy callers into canonical authorities. They must not
+become permanent parallel engines.
+
+### Before Changing Combat Code
+
+1. Read `game.md`.
+2. Identify the canonical system that owns the behavior being changed.
+3. Search for existing helpers, resolvers, selectors, adapters, and tests
+   before creating new ones.
+4. Do not create parallel combat engines.
+5. Preserve manual/AI/autoplay parity.
+6. Preserve hex/square compatibility where spatial logic is involved.
+7. Preserve the current universal `Structure` architecture.
+8. Preserve combat-log correctness and turn/action ownership.
+9. Prefer incremental migration and adapters over broad rewrites.
+10. Add or update tests whenever canonical behavior changes.
+
+For asynchronous combat changes, continue to follow the browser-log
+verification requirements later in this file.
+
+### Resolution and Protection Boundaries
+
+Avoiding or controlling contact and armor protection are separate stages.
+Positioning, distance, movement, dodge, parry, block, shield use, weapon
+interception, awareness, and reaction state may prevent or alter contact.
+Armor primarily resolves what happens after contact reaches a location it
+covers.
+
+Do not collapse armor into a single generic avoidance statistic. Preserve and
+integrate existing hit-location, armor-coverage, armor-gap,
+weapon-versus-armor, impact, protection, shield, and wound authorities.
+
+Do not regress established advanced behavior into a generic attack-roll →
+avoidance statistic → HP-only path. Preserve, where implemented:
+
+- hit location before injury or damage resolution
+- armor coverage and armor-gap attacks
+- ineffective longsword cuts against appropriate plate
+- half-sword thrusts, pommel/crossguard strikes, and appropriate anti-armor
+  weapons
+- grapple state and suppression of inappropriate standing/armored selections
+- canonical `combatStamina` with a floor of `0`
+- routing, unconsciousness, and death
+- tactical memory and AI tactical selection
+- canonical combat-log outcomes
+
+### Tactical Memory Identity
+
+Preserve the current canonical generation/combatant identity semantics.
+Armored tactical memory currently uses the conceptual key:
+
+```text
+generationId::attackerId::defenderId
+```
+
+Do not casually change this key or a more specific canonical representation
+used by working code. Preserve opponent-specific evidence such as armor-stopped
+attacks, ineffective cuts, gap-attempt outcomes, weapon/technique
+effectiveness, and defensive behavior so later AI choices can learn from
+earlier exchanges.
+
+### Initiative and Time
+
+Preserve the current canonical direction:
+
+- one round represents approximately six seconds
+- combatants roll initiative again at the start of each new round
+
+Do not silently substitute another RPG's initiative or reaction model.
+
+### No Speculative Rewrites
+
+Future reactions, physiology, advanced grappling, tactical AI, and
+large-battle architecture in `game.md` express direction, not permission for
+unrelated implementation. Implement them only when requested by the active
+milestone or task.
+
+Do not remove current HP/damage infrastructure merely because the long-term
+physiology model is more detailed. Do not invent speculative reactions merely
+because a future reaction system is documented. Preserve existing reaction,
+brace, interception, riposte, grapple, and tactical-window work for later
+canonical integration.
+
+### Compatibility During Combat Refactors
+
+- Preserve existing save and state compatibility where practical.
+- Preserve IDs, generation IDs, and combatant identity semantics.
+- Avoid unnecessary schema changes.
+- Do not change public APIs without a migration path.
+- Preserve existing tests unless a test is proven to encode superseded
+  behavior.
+- Do not delete or weaken tests merely to make a build pass.
+- Preserve current working behavior with adapters while callers migrate.
+
 ## Core Actor Principles
 
 ### Playable Does Not Mean Party

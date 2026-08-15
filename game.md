@@ -1513,6 +1513,257 @@ Do not allow old compatibility-only movement or range fields to override clean o
 
 ---
 
+# Combat Constitution
+
+This simulator may retain a generic d20-based resolution foundation, including
+d20 rolls, initiative, attributes, contested checks, rounds, and critical
+outcomes where they remain useful. Another tabletop RPG is not the combat
+specification for this project.
+
+The simulator's identity is:
+
+> A simulation-first medieval combat engine in which dice resolve uncertainty,
+> while physical circumstances, equipment, anatomy, positioning, technique,
+> and combat state determine what is actually possible and what happens.
+
+Existing simulation systems take precedence over tabletop abstractions whenever
+the two conflict. Public-facing terminology must remain project-owned and
+generic. Continue the existing prohibition against public-facing `5e` naming,
+Palladium-derived terminology, and unnecessary proprietary tabletop vocabulary.
+
+Prefer terms such as attack resolution, defense, protection, armor interaction,
+hit location, wound, technique, tactical memory, reaction, combat state, and
+simulation engine.
+
+## Simulation Before Abstraction
+
+Model the physical and tactical event first. Dice may answer uncertain
+questions:
+
+- Did the combatant successfully execute the attempt?
+- Did the defender react successfully?
+- Where did contact occur?
+- Did an uncertain penetration, gap attack, grapple, or other contested event
+  succeed?
+
+Dice must not replace physical facts already known to the simulation:
+
+- A sword cut striking intact plate does not become an effective cutting wound
+  merely because a generic damage roll is high.
+- Armor protects the locations it physically covers.
+- Weapon geometry, attack type, armor material and construction, position,
+  technique, and target state matter.
+- An abstract action slot does not permit a physically impossible action.
+
+## Canonical Combat Resolution Pipeline
+
+The long-term canonical combat pipeline is:
+
+```text
+Intent
+  ↓
+Target selection
+  ↓
+Tactical memory / situational evaluation
+  ↓
+Weapon / available method
+  ↓
+Technique selection
+  ↓
+Attack execution
+  ↓
+Defender awareness / reaction opportunity
+  ↓
+Contact / attack resolution
+  ↓
+Hit location
+  ↓
+Armor / shield / protection covering that location
+  ↓
+Weapon × technique × armor interaction
+  ↓
+Stop / deflection / impact / gap / penetration result
+  ↓
+Wound or physiological consequence
+  ↓
+Capability / consciousness / stamina / morale effects
+  ↓
+Combat state update
+  ↓
+Tactical-memory update
+  ↓
+Combat log
+```
+
+This is an architectural model, not permission to rewrite every existing
+system immediately. Existing implementations must migrate toward it
+incrementally, with adapters and tests protecting working behavior.
+
+## One Canonical Combat Engine
+
+This is a non-negotiable architecture rule:
+
+> Manual player actions, AI actions, automated simulation, and combat logging
+> must use the same canonical combat-resolution engine.
+
+The responsibility boundary is:
+
+```text
+UI → requests actions and displays results
+AI → chooses actions
+Simulation engine → resolves outcomes
+Combat log → reports canonical outcomes
+```
+
+Do not create AI-only damage rules, player-only attack shortcuts, duplicate
+hit-resolution engines, separate simplified combat rules for automated
+battles, or UI logic that independently decides combat outcomes.
+
+## Defense and Armor Are Separate Stages
+
+Avoiding or controlling contact is distinct from protection after contact.
+Potential avoidance/contact defenses include:
+
+- positioning, distance, and movement
+- dodge, parry, block, and shield use
+- weapon interception
+- awareness and reaction state
+
+Armor primarily answers what happens after an attack reaches a protected
+location. Do not reduce physical armor to a single generic avoidance
+statistic. Existing armor, coverage, hit-location, armor-gap, and
+weapon-versus-armor systems remain authoritative where implemented.
+
+## Existing Advanced Combat Work Must Be Preserved
+
+Incremental consolidation into the canonical pipeline must preserve and
+integrate the advanced systems already developed, including where currently
+implemented:
+
+- hit location before injury or damage resolution
+- armor coverage and armor-gap attacks
+- weapon-versus-armor effectiveness
+- longsword cuts being ineffective against appropriate plate protection
+- half-sword thrusting
+- pommel and crossguard strikes
+- two-handed hammers and other physically appropriate anti-armor methods
+- grappling and suppression of inappropriate standing or armored selections
+  during an active grapple
+- canonical `combatStamina`, including its floor of `0`
+- routing, unconsciousness, and death
+- tactical memory
+- canonical combat logs
+- AI tactical selection
+
+Do not regress these systems into a generic attack-roll → avoidance statistic
+→ HP-only model.
+
+## Tactical Memory
+
+Opponent-specific tactical memory is part of the canonical simulation. Where
+applicable, preserve the established generation/combatant identity scheme. The
+current armored tactical-memory key has the conceptual form:
+
+```text
+generationId::attackerId::defenderId
+```
+
+Do not casually replace a more specific canonical identity representation used
+by working code. Tactical memory should be capable of retaining evidence such
+as:
+
+- attacks stopped by armor and ineffective cuts
+- successful or failed gap attempts
+- weapon and technique effectiveness
+- defensive behavior
+- other opponent-specific tactical observations
+
+Future AI should use that evidence. Repeated ineffective sword cuts against a
+particular opponent's plate should reduce the likelihood of repeating that
+tactic and encourage physically appropriate alternatives when available.
+
+## Reactions — Future Milestone Direction
+
+Reactions are a future simulation system, not work authorized by this
+documentation pass. Future reactions may include parry, block, dodge, shield
+response, brace, intercept, disengagement response, counter-grapple, weapon
+bind/counter, and protection of an ally where physically possible.
+
+Reaction availability must eventually derive from simulation state, not from
+automatically copying a tabletop "one reaction per round" abstraction.
+Relevant constraints may include awareness, facing and position, distance,
+weapon state, posture, available time/readiness, stamina, current engagement,
+ongoing grapple, and previous commitments during the round.
+
+Do not implement speculative reaction mechanics before the active milestone
+defines them. Existing reaction, brace, interception, riposte, and tactical
+window work must be preserved and integrated rather than replaced.
+
+## Injury and Physiology — Future Direction
+
+The long-term system should move toward physical consequences rather than
+making generic HP the sole authority. Potential consequences include
+location-specific wounds, impaired arms or hands, impaired legs, movement
+loss, weapon-control loss, concussion, pain, blood loss, consciousness
+effects, shock or incapacitation, and accumulated physiological consequences.
+
+Do not remove current HP or damage infrastructure merely because this future
+direction exists. Migration must be incremental and tested.
+
+## Initiative and Combat Time
+
+One combat round represents approximately six seconds. Combatants roll
+initiative again at the start of each new round according to the current
+canonical implementation. Do not silently replace this with another RPG's
+initiative model.
+
+Long-term reaction and readiness mechanics may make combat appear more
+simultaneous while retaining deterministic simulation processing.
+
+## Post-8C Combat Architecture Roadmap
+
+This roadmap names top-level milestones. It does not rename or replace existing
+Milestone 8C internal phase labels such as `8C-8D1` water traversal. Those
+spatial/environment phases remain part of Milestone 8C.
+
+### Top-Level Milestone 8D — Canonical Combat Resolution Pipeline
+
+Formalize the common combat-resolution path and remove architectural
+divergence between manual, AI, automated simulation, and logging paths. Favor
+adapters and consolidation over destructive rewrites.
+
+
+### Top-Level Milestone 8E — Defense and Reaction System
+
+Develop physically constrained defensive responses and readiness/reaction
+handling.
+
+### Top-Level Milestone 8F — Injury and Physiology
+
+Deepen location-specific consequences and reduce dependence on generic HP as
+the sole physical model.
+
+### Top-Level Milestone 8G — Advanced Grappling and Close Combat
+
+Integrate grappling, weapon control, posture, close-range techniques, and
+appropriate counters into the canonical pipeline.
+
+### Top-Level Milestone 8H — Tactical AI Integration
+
+Make AI reason through the complete canonical simulation, including tactical
+memory, equipment, target state, armor, techniques, reactions, and injuries.
+
+### Top-Level Milestone 8I — Balance, Performance, and Large-Battle Validation
+
+Validate individual combat, mixed equipment, AI behavior, manual/AI parity,
+determinism where expected, combat-log correctness, performance, and larger
+battles such as 20-v-20.
+
+Milestones 8E through 8I describe future direction. They are not authorization
+to implement those systems before the active milestone or task requests them.
+
+---
+
 # Combat Engine
 
 Every combatant tracks:
