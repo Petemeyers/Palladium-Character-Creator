@@ -122,6 +122,60 @@ Preserve the current canonical direction:
 
 Do not silently substitute another RPG's initiative or reaction model.
 
+Top-level Milestone 8D (Canonical Combat Resolution Pipeline, Phases 1–10)
+is VERIFIED COMPLETE. See "Milestone 8D Canonical Authorities" below and the
+"Milestone 8D — Verified Canonical Combat Resolution Architecture" section in
+`game.md`.
+
+### Milestone 8D Canonical Authorities
+
+These authorities exist and are verified. Use them; do not rebuild them.
+
+- Physical weapon strikes (manual, enemy AI, player AI/autoplay, riposte,
+  attack-of-opportunity, overwatch, charge follow-through, melee, bow,
+  crossbow, thrown, extended melee) resolve through `CombatPage.attack()`.
+  `attack()` is the weapon-strike spine, not the universal HP-loss function.
+- Already-resolved impacts (technique, tactical, status, engine HEAL) go
+  through `applyCanonicalCombatEffect` with an explicit protection policy
+  (physical-armor versus armor-bypass). Distinguish attack admission from
+  resolved-impact application.
+- All active combat HP mutation uses the canonical HP authority
+  (`src/utils/combat/canonicalHpAuthority.js`: `getFighterHP`, `clampHP`,
+  `applyHPToFighter`). Local and engine healing share it via
+  `applyCanonicalLocalHealing`. Do not write HP aliases directly or add
+  manual alias synchronization.
+- Combat stamina uses `spendCombatStamina` with compatibility mirroring.
+  Charge is 1 movement + 2 committed attack. Grapple stamina is owned by
+  canonical grapple admission only.
+- Ranged legality (LOS, obstruction, range bands, exactly-once ammunition,
+  crossbow chamber/reload) uses `validateCanonicalRangedAttack` for every
+  control mode. Thrown weapons use the same admission and canonical armor.
+- Grapple: canonical admission → canonical stamina → low-level contest
+  mechanics → canonical grapple impact → canonical resolved-effect →
+  canonical HP. `applyDamageWithArmor` is a fail-closed deprecated shim.
+- The reaction lifecycle (`src/utils/combat/reactionResolution.js`) is
+  shared by Initiative Actions, Tactical Pulse, manual, and AI:
+  offered → admitted → consumed → resolving → resolved, with
+  declined/expired/invalidated/rejected terminals.
+
+Rules for future combat changes:
+
+- Do not create parallel combat outcome engines or duplicate resolvers.
+- Use the existing canonical admission and mutation authorities above.
+- Inspect ownership and mutation keys (execution keys, turn tokens, combat
+  session, resolved-key sets) before adding callbacks or delayed work.
+- Preserve manual/AI/autoplay resolution parity; selection may differ,
+  outcome authority may not.
+- Do not route supernatural or armor-bypass effects through physical armor
+  by accident; set the protection policy explicitly.
+- Do not move future physiology into the current HP compatibility model
+  prematurely; wound/physiology depth belongs to Milestone 8F.
+- Known deferred items (enemy-AI AoO scheduling wrapper, legacy manual hex
+  overwatch suppression shot, lifecycle/environmental direct HP writes such
+  as fall damage and death-floor transitions, lift/carry stamina upkeep)
+  are recorded in `game.md` under the 8D closure section and belong to
+  later milestones. Do not treat them as license for new bypasses.
+
 ### No Speculative Rewrites
 
 Future reactions, physiology, advanced grappling, tactical AI, and

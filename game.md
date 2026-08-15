@@ -1732,6 +1732,9 @@ Formalize the common combat-resolution path and remove architectural
 divergence between manual, AI, automated simulation, and logging paths. Favor
 adapters and consolidation over destructive rewrites.
 
+Status: VERIFIED COMPLETE (closure audit, August 2026). See "Milestone 8D —
+Verified Canonical Combat Resolution Architecture" below for the implemented
+architecture and the deferred-work map.
 
 ### Top-Level Milestone 8E — Defense and Reaction System
 
@@ -1761,6 +1764,107 @@ battles such as 20-v-20.
 
 Milestones 8E through 8I describe future direction. They are not authorization
 to implement those systems before the active milestone or task requests them.
+
+## Milestone 8D — Verified Canonical Combat Resolution Architecture
+
+Milestone 8D (Phases 1–10) is complete and verified. The implemented
+architecture uses shared authorities, not one monolithic executor:
+
+```text
+Intent / selection
+  ↓
+canonical action ownership/admission (execution keys, turn tokens)
+  ↓
+attack / grapple / resolved-effect / movement / reaction executor
+  ↓
+defense/contact as appropriate
+  ↓
+hit location as appropriate
+  ↓
+armor/protection policy (physical-armor vs explicit bypass)
+  ↓
+canonical impact/effect application
+  ↓
+canonical HP / stamina / position mutation
+  ↓
+structured combat events
+  ↓
+player/developer presentation
+  ↓
+continuation/finalization
+```
+
+Canonical separation of responsibilities:
+
+```text
+UI → requests / presents
+AI → selects
+Action authorities → admit and own execution
+Combat executors → resolve
+Canonical mutation authorities → commit HP/stamina/position/etc.
+Events/logging → report
+```
+
+Verified authorities:
+
+- `CombatPage.attack()` is the physical weapon-strike spine. Manual, enemy
+  AI, player AI/autoplay, riposte, attack-of-opportunity, overwatch, charge
+  follow-through, melee, bow, crossbow, thrown, and extended melee all
+  resolve through it. It is not the universal HP-loss function.
+- Canonical resolved effects (`applyCanonicalCombatEffect`) handle
+  already-resolved impacts: technique, tactical, status, and engine HEAL
+  events carry an explicit protection policy (physical-armor versus
+  armor-bypass) and route through the canonical HP authority.
+- The canonical HP authority (`canonicalHpAuthority.js`:
+  `getFighterHP` / `clampHP` / `applyHPToFighter`) synchronizes all active
+  HP aliases and owns clamping for weapon damage, braced counter, resolved
+  effects, grapple impact, and local/engine healing.
+- Canonical stamina (`spendCombatStamina` with compatibility mirroring) owns
+  combat action costs. Charge is 1 movement + 2 committed attack. Grapple
+  stamina is spent only at canonical grapple admission.
+- Ranged legality uses canonical admission
+  (`validateCanonicalRangedAttack`): line of sight, obstruction, range
+  bands, exactly-once ammunition, and crossbow chamber/reload, shared by
+  manual, enemy AI, player AI/autoplay, and tactical overwatch. Thrown
+  weapons use the same admission and canonical armor resolution. Extended
+  melee remains melee.
+- Grapple uses canonical admission → canonical stamina → low-level
+  contest/state mechanics → canonical grapple impact → canonical
+  resolved-effect/protection → canonical HP. Legacy `applyDamageWithArmor`
+  is a fail-closed deprecated shim.
+- The reaction lifecycle (`reactionResolution.js`) is shared by Initiative
+  Actions, Tactical Pulse, manual, and AI: offered → admitted → consumed →
+  resolving → resolved, with declined/expired/invalidated/rejected
+  terminals and exactly-once consumption.
+- Local and engine healing share the canonical HP authority
+  (`canonicalLocalHealing.js`); healing policy stays local, HP ownership
+  does not.
+- Every attack, damage, grapple, and healing mutation passes ownership
+  gates (execution keys, turn tokens, combat session, stale-callback
+  blocking) before any roll or HP change.
+
+Deferred work recorded at closure (assigned to later milestones, not 8D):
+
+- 8E Defense/Reaction: fold the enemy-AI attack-of-opportunity scheduling
+  wrapper in `enemyTurnAI.js` into `scheduleCanonicalOpportunityAttack`
+  (its outcome already resolves canonically through `attack()`); migrate or
+  retire the legacy manual hex "Overwatch Shot" suppression path, whose
+  damage application is currently blocked at the `attack()` ownership gate;
+  readiness and reaction resource costs.
+- 8F Injury/Physiology: route lifecycle/environmental HP writes through the
+  canonical HP authority (bleeding death-floor transition, fall damage in
+  `updateActiveEffects.js`, aftermath coup de grâce, surrender-execution
+  terminal write); richer wound consequences, blood loss, pain,
+  consciousness, limb impairment.
+- 8H Tactical AI: broader tactical-memory propagation, wound-aware
+  decisions, opponent-learning expansion.
+- Supernatural system: turn-dead destruction currently writes the death
+  floor directly; supernatural protection categories and resistances.
+- 8C movement/spatial: accepted traversal followed by terrain-blocked
+  commit remains 8C work, not combat-resolution work.
+- Canonical stamina adoption for lift/carry upkeep and compatibility flight
+  paths (these are shared, control-mode-independent upkeep drains, not
+  combat-action resolution).
 
 ---
 
