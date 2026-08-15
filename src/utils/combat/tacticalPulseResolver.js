@@ -75,7 +75,12 @@ export function getTacticalInitiativePriority(actor = {}) {
 
 const MAX_COMPLETED_OWNERSHIP_HISTORY = 12;
 
-export function createTacticalPulseRuntime({ generationId = 0, combatSession = 0, clock = createTacticalPulseClock() } = {}) {
+export function createTacticalPulseRuntime({
+  generationId = 0,
+  combatSession = 0,
+  clock = createTacticalPulseClock(),
+  reactionRegistry = null,
+} = {}) {
   return {
     generationId: Number(generationId),
     combatSession: Number(combatSession),
@@ -83,7 +88,7 @@ export function createTacticalPulseRuntime({ generationId = 0, combatSession = 0
     ownership: null,
     completedOwnershipKeys: new Set(),
     staminaChargeKeys: new Set(),
-    actionRuntime: createTacticalActionRuntime({ generationId, combatSession }),
+    actionRuntime: createTacticalActionRuntime({ generationId, combatSession, reactionRegistry }),
   };
 }
 

@@ -9,14 +9,198 @@ export const REACTION_TYPES = Object.freeze({
 
 export const REACTION_STATUSES = Object.freeze({
   OFFERED: "offered",
+  ADMITTED: "admitted",
   CONSUMED: "consumed",
   RESOLVING: "resolving",
   RESOLVED: "resolved",
   DECLINED: "declined",
   EXPIRED: "expired",
+  INVALIDATED: "invalidated",
+  REJECTED: "rejected",
 });
 
 export const MAX_IMMEDIATE_REACTION_DEPTH = 1;
+
+export const CANONICAL_REACTION_TERMINAL_STATUSES = Object.freeze([
+  REACTION_STATUSES.RESOLVED,
+  REACTION_STATUSES.DECLINED,
+  REACTION_STATUSES.EXPIRED,
+  REACTION_STATUSES.INVALIDATED,
+  REACTION_STATUSES.REJECTED,
+]);
+
+const CANONICAL_REACTION_TRANSITIONS = Object.freeze({
+  [REACTION_STATUSES.OFFERED]: Object.freeze([
+    REACTION_STATUSES.ADMITTED,
+    REACTION_STATUSES.CONSUMED,
+    REACTION_STATUSES.DECLINED,
+    REACTION_STATUSES.EXPIRED,
+    REACTION_STATUSES.INVALIDATED,
+    REACTION_STATUSES.REJECTED,
+  ]),
+  [REACTION_STATUSES.ADMITTED]: Object.freeze([
+    REACTION_STATUSES.CONSUMED,
+    REACTION_STATUSES.DECLINED,
+    REACTION_STATUSES.EXPIRED,
+    REACTION_STATUSES.INVALIDATED,
+    REACTION_STATUSES.REJECTED,
+  ]),
+  [REACTION_STATUSES.CONSUMED]: Object.freeze([
+    REACTION_STATUSES.RESOLVING,
+    REACTION_STATUSES.EXPIRED,
+    REACTION_STATUSES.INVALIDATED,
+    REACTION_STATUSES.REJECTED,
+  ]),
+  [REACTION_STATUSES.RESOLVING]: Object.freeze([
+    REACTION_STATUSES.RESOLVED,
+    REACTION_STATUSES.DECLINED,
+    REACTION_STATUSES.EXPIRED,
+    REACTION_STATUSES.INVALIDATED,
+    REACTION_STATUSES.REJECTED,
+  ]),
+});
+
+export function isCanonicalReactionTerminal(record) {
+  return CANONICAL_REACTION_TERMINAL_STATUSES.includes(record?.status || record?.state);
+}
+
+export function buildCanonicalReactionLifecycleRecord({
+  opportunityId,
+  reactionId = opportunityId,
+  triggerType,
+  sourceExecutionId,
+  sourceExecutionKey = sourceExecutionId,
+  generationId,
+  combatSession = generationId,
+  actorId,
+  reactorId = actorId,
+  targetId,
+  depth = 1,
+  legalResponses = [],
+  selectedResponse = null,
+  status = REACTION_STATUSES.OFFERED,
+  terminalReason = null,
+  mode = "canonical",
+  metadata = {},
+} = {}) {
+  const id = String(reactionId || opportunityId || "");
+  if (!id || !triggerType || !sourceExecutionKey || !reactorId || !targetId) {
+    throw new TypeError("Canonical reaction identity, trigger, source execution, actor, and target are required");
+  }
+  return Object.freeze({
+    ...metadata,
+    opportunityId: String(opportunityId || id),
+    reactionId: id,
+    triggerType,
+    sourceExecutionId: sourceExecutionId || sourceExecutionKey,
+    sourceExecutionKey,
+    generationId,
+    combatSession,
+    actorId: String(actorId || reactorId),
+    reactorId: String(reactorId),
+    targetId: String(targetId),
+    depth: Number(depth),
+    reactionDepth: Number(depth),
+    legalResponses: Object.freeze([...new Set(legalResponses)]),
+    selectedResponse,
+    status,
+    state: status,
+    terminalReason,
+    mode,
+    consumed: metadata.consumed === true ||
+      status === REACTION_STATUSES.CONSUMED ||
+      status === REACTION_STATUSES.RESOLVING ||
+      status === REACTION_STATUSES.RESOLVED,
+    declined: status === REACTION_STATUSES.DECLINED,
+    expired: status === REACTION_STATUSES.EXPIRED,
+  });
+}
+
+export function registerCanonicalReaction(registry, record) {
+  if (!(registry instanceof Map)) return { accepted: false, reason: "missing_registry" };
+  const reactionId = String(record?.reactionId || record?.opportunityId || "");
+  if (!reactionId) return { accepted: false, reason: "missing_reaction_identity" };
+  if (registry.has(reactionId)) return { accepted: false, reason: "duplicate_reaction_opportunity", reaction: registry.get(reactionId) };
+  registry.set(reactionId, record);
+  return { accepted: true, reaction: record };
+}
+
+export function transitionCanonicalReaction(registry, reactionId, status, extra = {}) {
+  if (!(registry instanceof Map)) return { accepted: false, reason: "missing_registry" };
+  const current = registry.get(reactionId);
+  if (!current) return { accepted: false, reason: "missing_reaction" };
+  if (!CANONICAL_REACTION_TRANSITIONS[current.status]?.includes(status)) {
+    return { accepted: false, reason: "illegal_reaction_transition", reaction: current };
+  }
+  const next = Object.freeze({
+    ...current,
+    ...extra,
+    status,
+    state: status,
+    selectedResponse: extra.selectedResponse ?? current.selectedResponse ?? null,
+    terminalReason: extra.terminalReason ??
+      extra.expirationReason ??
+      extra.declineReason ??
+      current.terminalReason ??
+      null,
+    consumed: current.consumed === true ||
+      status === REACTION_STATUSES.CONSUMED ||
+      status === REACTION_STATUSES.RESOLVING ||
+      status === REACTION_STATUSES.RESOLVED,
+    declined: status === REACTION_STATUSES.DECLINED,
+    expired: status === REACTION_STATUSES.EXPIRED,
+  });
+  registry.set(reactionId, next);
+  return { accepted: true, reaction: next };
+}
+
+export function validateCanonicalReactionOwnership({
+  opportunity,
+  registryRecord,
+  generationId,
+  combatSession = generationId,
+  sourceExecutionId,
+  actorId,
+  targetId,
+  expectedStatuses = [
+    REACTION_STATUSES.OFFERED,
+    REACTION_STATUSES.ADMITTED,
+    REACTION_STATUSES.CONSUMED,
+    REACTION_STATUSES.RESOLVING,
+  ],
+  actorValid = true,
+  targetValid = true,
+  sourceRelevant = true,
+  combatActive = true,
+  maximumDepth = MAX_IMMEDIATE_REACTION_DEPTH,
+} = {}) {
+  const reject = (reason) => ({ valid: false, reason });
+  if (!combatActive) return reject("combat_ended");
+  if (!opportunity || !registryRecord || opportunity.reactionId !== registryRecord.reactionId) {
+    return reject("missing_reaction_record");
+  }
+  if (!expectedStatuses.includes(registryRecord.status)) return reject("reaction_not_in_expected_state");
+  if (isCanonicalReactionTerminal(registryRecord)) return reject("reaction_terminal");
+  if (generationId !== undefined && registryRecord.generationId !== generationId) return reject("stale_generation");
+  if (combatSession !== undefined && registryRecord.combatSession !== undefined &&
+      registryRecord.combatSession !== combatSession) return reject("stale_combat_session");
+  const source = registryRecord.sourceExecutionId || registryRecord.sourceExecutionKey ||
+    registryRecord.sourceAttackExecutionKey;
+  if (sourceExecutionId !== undefined && source !== sourceExecutionId) return reject("source_execution_mismatch");
+  if (actorId !== undefined && String(registryRecord.actorId || registryRecord.reactorId) !== String(actorId)) {
+    return reject("participant_mismatch");
+  }
+  if (targetId !== undefined && String(registryRecord.targetId) !== String(targetId)) {
+    return reject("participant_mismatch");
+  }
+  if (!actorValid) return reject("reactor_invalid");
+  if (!targetValid) return reject("target_invalid");
+  if (!sourceRelevant) return reject("source_trigger_stale");
+  if (Number(registryRecord.depth ?? registryRecord.reactionDepth ?? 0) > Number(maximumDepth)) {
+    return reject("reaction_depth_cap");
+  }
+  return { valid: true, reason: "valid" };
+}
 
 const terminal = (fighter) => {
   const hp = Number(
@@ -158,13 +342,19 @@ export function buildRiposteOpportunity({
   }
   return Object.freeze({
     reactionId: `${exchange.exchangeId}:riposte`,
+    opportunityId: `${exchange.exchangeId}:riposte`,
     reactionType: REACTION_TYPES.RIPOSTE,
+    triggerType: "advantageous-parry",
     sourceExchangeId: exchange.exchangeId,
     sourceAttackExecutionKey: exchange.attackExecutionKey,
+    sourceExecutionId: exchange.attackExecutionKey,
+    sourceExecutionKey: exchange.attackExecutionKey,
     generationId: exchange.generationId,
+    combatSession: exchange.generationId,
     round: exchange.round,
     actionSequence: exchange.createdAtActionSequence,
     reactorId: reactor.id,
+    actorId: reactor.id,
     targetId: target.id,
     openingLevel: exchange.openingLevel,
     defenseOutcome: exchange.parryOutcome,
@@ -175,6 +365,11 @@ export function buildRiposteOpportunity({
     staminaCost: Math.max(0, Number(staminaCost) || 0),
     recoveryPenalty: calculateRiposteRecoveryPenalty(exchange),
     status: REACTION_STATUSES.OFFERED,
+    state: REACTION_STATUSES.OFFERED,
+    legalResponses: Object.freeze([REACTION_TYPES.RIPOSTE, "decline"]),
+    selectedResponse: null,
+    terminalReason: null,
+    depth: 1,
     reactionDepth: 1,
     createdFromParry: true,
     consumesOpening: true,
@@ -210,34 +405,20 @@ export function consumeRiposteOpening({
   if (opportunity.reactionDepth !== 1) return reject("illegal_reaction_depth");
 
   const consumedExchange = Object.freeze({ ...exchange, consumed: true });
-  const consumedReaction = Object.freeze({
-    ...storedReaction,
-    status: REACTION_STATUSES.CONSUMED,
-    consumed: true,
-  });
+  const consumedTransition = transitionCanonicalReaction(
+    reactionRegistry,
+    opportunity.reactionId,
+    REACTION_STATUSES.CONSUMED,
+    { selectedResponse: opportunity.selectedResponse || REACTION_TYPES.RIPOSTE },
+  );
+  if (!consumedTransition.accepted) return reject(consumedTransition.reason);
+  const consumedReaction = consumedTransition.reaction;
   exchangeRegistry.set(pairKey, consumedExchange);
-  reactionRegistry.set(opportunity.reactionId, consumedReaction);
   return { accepted: true, exchange: consumedExchange, opportunity: consumedReaction };
 }
 
 export function transitionReaction(reactionRegistry, reactionId, status, extra = {}) {
-  if (!(reactionRegistry instanceof Map)) return { accepted: false, reason: "missing_registry" };
-  const current = reactionRegistry.get(reactionId);
-  if (!current) return { accepted: false, reason: "missing_reaction" };
-  const allowed = {
-    [REACTION_STATUSES.OFFERED]: [REACTION_STATUSES.DECLINED, REACTION_STATUSES.EXPIRED, REACTION_STATUSES.CONSUMED],
-    [REACTION_STATUSES.CONSUMED]: [REACTION_STATUSES.RESOLVING, REACTION_STATUSES.EXPIRED],
-    [REACTION_STATUSES.RESOLVING]: [REACTION_STATUSES.RESOLVED, REACTION_STATUSES.EXPIRED],
-  };
-  if (!allowed[current.status]?.includes(status)) return { accepted: false, reason: "illegal_reaction_transition", reaction: current };
-  const next = Object.freeze({
-    ...current,
-    ...extra,
-    status,
-    declined: status === REACTION_STATUSES.DECLINED,
-  });
-  reactionRegistry.set(reactionId, next);
-  return { accepted: true, reaction: next };
+  return transitionCanonicalReaction(reactionRegistry, reactionId, status, extra);
 }
 
 export function validateReactionExecution({
@@ -250,21 +431,31 @@ export function validateReactionExecution({
   targetId,
   combatActive = true,
 } = {}) {
-  if (!combatActive) return { valid: false, reason: "combat_ended" };
-  if (!opportunity || !registryRecord || opportunity.reactionId !== registryRecord.reactionId) {
-    return { valid: false, reason: "missing_reaction_record" };
+  const ownership = validateCanonicalReactionOwnership({
+    opportunity,
+    registryRecord,
+    generationId,
+    combatSession: generationId,
+    sourceExecutionId: parentAttackExecutionKey,
+    actorId: reactorId,
+    targetId,
+    expectedStatuses: [REACTION_STATUSES.CONSUMED, REACTION_STATUSES.RESOLVING],
+    combatActive,
+  });
+  if (!ownership.valid) {
+    if (ownership.reason === "reaction_not_in_expected_state") {
+      return { valid: false, reason: "reaction_not_consumed" };
+    }
+    if (ownership.reason === "stale_generation" || ownership.reason === "stale_combat_session") {
+      return { valid: false, reason: "stale_reaction" };
+    }
+    if (ownership.reason === "source_execution_mismatch") {
+      return { valid: false, reason: "parent_attack_mismatch" };
+    }
+    return ownership;
   }
-  if (![REACTION_STATUSES.CONSUMED, REACTION_STATUSES.RESOLVING].includes(registryRecord.status)) {
-    return { valid: false, reason: "reaction_not_consumed" };
-  }
-  if (registryRecord.generationId !== generationId || Number(registryRecord.round) !== Number(round)) {
+  if (Number(registryRecord.round) !== Number(round)) {
     return { valid: false, reason: "stale_reaction" };
-  }
-  if (registryRecord.sourceAttackExecutionKey !== parentAttackExecutionKey) {
-    return { valid: false, reason: "parent_attack_mismatch" };
-  }
-  if (registryRecord.reactorId !== reactorId || registryRecord.targetId !== targetId) {
-    return { valid: false, reason: "participant_mismatch" };
   }
   if (registryRecord.reactionDepth !== 1) return { valid: false, reason: "reaction_depth_cap" };
   return { valid: true, reason: "valid" };

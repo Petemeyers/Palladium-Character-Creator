@@ -54,7 +54,11 @@ export function createTacticalActionRuntime({
   combatSession = 0,
   maxTerminalHistory = 128,
   maxClaimHistory = 256,
+  reactionRegistry: providedReactionRegistry = null,
 } = {}) {
+  const reactionRegistry = providedReactionRegistry instanceof Map
+    ? providedReactionRegistry
+    : new Map();
   return {
     generationId: Number(generationId),
     combatSession: Number(combatSession),
@@ -65,8 +69,9 @@ export function createTacticalActionRuntime({
     ammunitionReleaseKeys: new Set(),
     ammunitionReleaseKeyOrder: [],
     terminalHistory: [],
-    reactionRuntime: createTacticalReactionRuntime({ generationId, combatSession, maxTerminalHistory, maxResolutionHistory: maxClaimHistory }),
-    postParryRuntime: createTacticalPostParryRuntime({ generationId, combatSession, maxHistory: maxTerminalHistory, maxClaims: maxClaimHistory }),
+    reactionRegistry,
+    reactionRuntime: createTacticalReactionRuntime({ generationId, combatSession, maxTerminalHistory, maxResolutionHistory: maxClaimHistory, reactionRegistry }),
+    postParryRuntime: createTacticalPostParryRuntime({ generationId, combatSession, maxHistory: maxTerminalHistory, maxClaims: maxClaimHistory, reactionRegistry }),
     chargeBraceRuntime: createTacticalChargeBraceRuntime({ generationId, combatSession, maxTerminalHistory, maxClaimHistory }),
     overwatchRuntime: createTacticalOverwatchRuntime({ generationId, combatSession, maxTerminalHistory, maxClaimHistory }),
     maxTerminalHistory: Math.max(16, Number(maxTerminalHistory) || 128),
@@ -695,17 +700,20 @@ export function resetTacticalActionCoordinates(runtime, { generationId, combatSe
   runtime.cleanupReason = null;
   runtime.lastCleanup = null;
   runtime.postCombatMutationsBlocked = 0;
+  runtime.reactionRegistry.clear();
   runtime.reactionRuntime = createTacticalReactionRuntime({
     generationId,
     combatSession,
     maxTerminalHistory: runtime.maxTerminalHistory,
     maxResolutionHistory: runtime.maxClaimHistory,
+    reactionRegistry: runtime.reactionRegistry,
   });
   runtime.postParryRuntime = createTacticalPostParryRuntime({
     generationId,
     combatSession,
     maxHistory: runtime.maxTerminalHistory,
     maxClaims: runtime.maxClaimHistory,
+    reactionRegistry: runtime.reactionRegistry,
   });
   runtime.chargeBraceRuntime = createTacticalChargeBraceRuntime({
     generationId,

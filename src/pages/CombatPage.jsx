@@ -296,6 +296,7 @@ import {
 import {
   REACTION_STATUSES,
   REACTION_TYPES,
+  buildCanonicalReactionLifecycleRecord,
   buildRiposteAttackRequest,
   buildRiposteOpportunity,
   canOfferRiposte,
@@ -303,6 +304,8 @@ import {
   getRiposteReachFeet,
   selectLegalRiposteAttack,
   shouldAiAcceptRiposte,
+  registerCanonicalReaction,
+  transitionCanonicalReaction,
   transitionReaction,
   validateReactionExecution,
 } from "../utils/combat/reactionResolution.js";
@@ -5742,10 +5745,11 @@ function CombatPage({ characters = [] }) {
   const weaponExchangeRegistryRef = useRef(new Map()); // participant pair -> latest canonical parry/tempo exchange.
   const weaponControlStateRegistryRef = useRef(new Map()); // controller::target -> persistent long-weapon measure state.
   const weaponBindRegistryRef = useRef(new Map()); // bindId -> persistent weapon contact state.
-  const reactionOpportunityRegistryRef = useRef(new Map()); // reactionId -> canonical immediate reaction lifecycle.
-  const dominantResponseRegistryRef = useRef(new Map()); // opportunityId -> dominant tactical-response lifecycle.
+  const reactionOpportunityRegistryRef = useRef(new Map()); // reactionId -> canonical reaction lifecycle across immediate response types.
+  const dominantResponseRegistryRef = reactionOpportunityRegistryRef; // UI/compatibility alias; dominant openings share canonical ownership.
   const dominantControlRegistryRef = useRef(new Map()); // controlId -> one-use bind, displacement, or shield-pressure state.
   const pendingRiposteResolverRef = useRef(null); // One suspended manual reaction decision.
+  const scheduleCanonicalOpportunityAttackRef = useRef(null); // Shared delayed AoO ownership adapter.
   const attackExecutionSerialRef = useRef(0);
   const attackActionGrantRegistryRef = useRef(new Map()); // grantId -> turn/action ownership metadata.
   const grappleActionExecutionRegistryRef = useRef(new Map()); // executionKey -> grapple action ownership record.
@@ -21193,32 +21197,12 @@ function CombatPage({ characters = [] }) {
           // Enemy gets an attack of opportunity (free attack)
           addLog(`${occupant.name} gets an attack of opportunity against ${combatant.name}!`, "warning");
 
-          // Store attack info for later execution after attack function is initialized
-          const attackerForAoO = occupant;
-          const targetForAoO = selectedMovementFighter;
-
-          // Queue the attack of opportunity after a brief delay
-          setTimeout(() => {
-            addLog(`${attackerForAoO.name} makes attack of opportunity!`, "info");
-            // Execute attack of opportunity - will be called via ref after attack is defined
-            if (attackRef.current) {
-              attackRef.current(attackerForAoO, targetForAoO, {
-                allowOutOfTurnAttack: true,
-                source: "attack-of-opportunity",
-              });
-            } else {
-              addLog(`Attack of opportunity delayed - attack function not ready`, "info");
-              // Retry after a longer delay
-              setTimeout(() => {
-                if (attackRef.current) {
-                  attackRef.current(attackerForAoO, targetForAoO, {
-                    allowOutOfTurnAttack: true,
-                    source: "attack-of-opportunity",
-                  });
-                }
-              }, 1000);
-            }
-          }, 500);
+          scheduleCanonicalOpportunityAttackRef.current?.({
+            attacker: occupant,
+            targetId: selectedMovementFighter,
+            source: "manual-movement-attack-of-opportunity",
+            delayMs: 500,
+          });
 
         } else {
           addLog(`${combatant.name} cannot close into melee - weapon range too long!`, "error");
@@ -22396,7 +22380,7 @@ function CombatPage({ characters = [] }) {
         registryRecord,
         generationId: combatSessionRef.current,
         round: meleeRoundRef.current ?? meleeRound,
-        parentAttackExecutionKey: activeAttackActionIdRef.current,
+        parentAttackExecutionKey: options.parentAttackExecutionKey || activeAttackActionIdRef.current,
         reactorId: actorId,
         targetId,
         combatActive: combatActiveRef.current && !combatOverRef.current && !combatEndCheckRef.current,
@@ -22481,6 +22465,164 @@ function CombatPage({ characters = [] }) {
     );
     return id;
   }, [addLog, fighters, getAttackActionGrant, isAttackActionGrantCurrent, meleeRound, turnCounter]);
+
+  const scheduleCanonicalOpportunityAttack = useCallback(({
+    attacker,
+    targetId,
+    source = "attack-of-opportunity",
+    delayMs = 500,
+    triggerType = "attack-of-opportunity",
+    reactionType = "attack_of_opportunity",
+    selectedResponse = "attack-of-opportunity",
+    legalResponses = [selectedResponse, "decline"],
+    attack = null,
+    attackOptions = {},
+  } = {}) => {
+    const actorId = String(attacker?.id || "");
+    const canonicalTargetId = String(targetId || "");
+    if (!actorId || !canonicalTargetId || !combatActiveRef.current || combatOverRef.current) {
+      return { accepted: false, reason: "opportunity-participant-or-combat-invalid" };
+    }
+    const sourceExecutionId = [
+      combatSessionRef.current,
+      meleeRoundRef.current ?? meleeRound,
+      turnCounterRef.current ?? turnCounter,
+      source,
+      triggerType,
+      actorId,
+      canonicalTargetId,
+      `reaction-${(attackExecutionSerialRef.current || 0) + 1}`,
+    ].join(":");
+    const opportunity = buildCanonicalReactionLifecycleRecord({
+      opportunityId: `${sourceExecutionId}:opportunity`,
+      triggerType,
+      sourceExecutionId,
+      generationId: combatSessionRef.current,
+      combatSession: combatSessionRef.current,
+      actorId,
+      targetId: canonicalTargetId,
+      depth: 1,
+      legalResponses,
+      mode: "initiative-actions",
+      metadata: {
+        reactionType,
+        sourceAttackExecutionKey: sourceExecutionId,
+        round: meleeRoundRef.current ?? meleeRound,
+        selectedResponse,
+        allowOutOfTurn: true,
+        isReaction: true,
+      },
+    });
+    const registration = registerCanonicalReaction(reactionOpportunityRegistryRef.current, opportunity);
+    if (!registration.accepted) return registration;
+    const admitted = transitionCanonicalReaction(
+      reactionOpportunityRegistryRef.current,
+      opportunity.reactionId,
+      REACTION_STATUSES.ADMITTED,
+      { selectedResponse },
+    );
+    if (!admitted.accepted) return admitted;
+    const consumed = transitionCanonicalReaction(
+      reactionOpportunityRegistryRef.current,
+      opportunity.reactionId,
+      REACTION_STATUSES.CONSUMED,
+      { selectedResponse },
+    );
+    if (!consumed.accepted) return consumed;
+    const opportunityGrant = createAttackActionGrant(actorId, canonicalTargetId, source);
+    const opportunityExecutionKey = createAttackExecutionKey(actorId, canonicalTargetId, source, {
+      grant: opportunityGrant,
+      scheduledAtTurnToken: opportunityGrant.turnToken,
+      callbackSource: `${source}-callback`,
+      isDelayedCallback: true,
+      allowOutOfTurnAttack: true,
+      reactionAdmission: consumed.reaction,
+      parentAttackExecutionKey: sourceExecutionId,
+    });
+    if (!opportunityExecutionKey) {
+      transitionCanonicalReaction(
+        reactionOpportunityRegistryRef.current,
+        opportunity.reactionId,
+        REACTION_STATUSES.REJECTED,
+        { terminalReason: "opportunity-attack-key-rejected" },
+      );
+      return { accepted: false, reason: "opportunity-attack-key-rejected" };
+    }
+    const resolving = transitionCanonicalReaction(
+      reactionOpportunityRegistryRef.current,
+      opportunity.reactionId,
+      REACTION_STATUSES.RESOLVING,
+      { responseExecutionKey: opportunityExecutionKey },
+    );
+    if (!resolving.accepted) return resolving;
+    setTimeout(async () => {
+      const liveRecord = reactionOpportunityRegistryRef.current.get(opportunity.reactionId);
+      const liveAttacker = (fightersRef.current || []).find((fighter) => String(fighter.id) === actorId);
+      const liveTarget = (fightersRef.current || []).find((fighter) => String(fighter.id) === canonicalTargetId);
+      const staleReason =
+        !combatActiveRef.current || combatOverRef.current || combatEndCheckRef.current ? "combat-ended" :
+        liveRecord?.status !== REACTION_STATUSES.RESOLVING ? "opportunity-no-longer-resolving" :
+        liveRecord.generationId !== combatSessionRef.current ? "opportunity-generation-stale" :
+        Number(liveRecord.round) !== Number(meleeRoundRef.current) ? "opportunity-round-stale" :
+        !liveAttacker || !liveTarget ? "opportunity-participant-missing" :
+        !isAttackActionGrantCurrent(opportunityGrant, actorId, canonicalTargetId) ? "opportunity-turn-ownership-stale" :
+        null;
+      if (staleReason) {
+        if (liveRecord?.status === REACTION_STATUSES.RESOLVING) {
+          transitionCanonicalReaction(
+            reactionOpportunityRegistryRef.current,
+            opportunity.reactionId,
+            REACTION_STATUSES.INVALIDATED,
+            { terminalReason: staleReason },
+          );
+        }
+        return;
+      }
+      if (!attackRef.current) {
+        transitionCanonicalReaction(
+          reactionOpportunityRegistryRef.current,
+          opportunity.reactionId,
+          REACTION_STATUSES.INVALIDATED,
+          { terminalReason: "attack-executor-unavailable" },
+        );
+        return;
+      }
+      const result = await attackRef.current(
+        attack ? { ...liveAttacker, selectedAttack: attack } : liveAttacker,
+        canonicalTargetId,
+        {
+        ...attackOptions,
+        attackDataOverride: attackOptions.attackDataOverride || attack || undefined,
+        allowOutOfTurnAttack: true,
+        attackActionId: opportunityExecutionKey,
+        attackActionGrant: opportunityGrant,
+        reactionAdmission: resolving.reaction,
+        source,
+        },
+      );
+      transitionCanonicalReaction(
+        reactionOpportunityRegistryRef.current,
+        opportunity.reactionId,
+        result?.blocked ? REACTION_STATUSES.REJECTED : REACTION_STATUSES.RESOLVED,
+        {
+          terminalReason: result?.blocked ? result.reason || "opportunity-attack-blocked" : null,
+          result,
+        },
+      );
+    }, Math.max(0, Number(delayMs) || 0));
+    return {
+      accepted: true,
+      opportunity: resolving.reaction,
+      attackExecutionKey: opportunityExecutionKey,
+    };
+  }, [
+    createAttackActionGrant,
+    createAttackExecutionKey,
+    isAttackActionGrantCurrent,
+    meleeRound,
+    turnCounter,
+  ]);
+  scheduleCanonicalOpportunityAttackRef.current = scheduleCanonicalOpportunityAttack;
 
   const getAttackExecutionMetadata = useCallback((executionKey) => {
     if (!executionKey || typeof executionKey !== "string") return null;
@@ -25759,29 +25901,24 @@ function CombatPage({ characters = [] }) {
       response,
     });
     if (reactionAttack && exchange?.stopThrustAuthorized) {
-      setTimeout(() => {
-        const liveController = (fightersRef.current || []).find((fighter) => fighter.id === controller.id) || controller;
-        if (!combatActiveRef.current || combatOverRef.current || !attackRef.current) return;
-        attackRef.current(
-          { ...liveController, selectedAttack: reactionAttack },
-          mover.id,
-          {
-            attackDataOverride: reactionAttack,
-            allowOutOfTurnAttack: true,
-            suppressActionSpend: true,
-            suppressEndTurn: true,
-            suppressSequentialTurnAdvance: true,
-            source: response.id,
-            reactionAdmission: {
-              reactionId: `weapon-entry:${combatSessionRef.current}:${controller.id}:${mover.id}:${meleeRoundRef.current}`,
-              reactionType: "weapon-measure-control",
-              reactionDepth: 1,
-              entryTechnique: exchange?.entryTechnique?.id || null,
-              controlResponse: response.id,
-            },
-          },
-        );
-      }, retreatPosition ? 260 : 0);
+      scheduleCanonicalOpportunityAttackRef.current?.({
+        attacker: controller,
+        targetId: mover.id,
+        source: response.id,
+        delayMs: retreatPosition ? 260 : 0,
+        triggerType: "stop-thrust",
+        reactionType: "weapon-measure-control",
+        selectedResponse: response.id,
+        legalResponses: [response.id, "decline"],
+        attack: reactionAttack,
+        attackOptions: {
+          suppressActionSpend: true,
+          suppressEndTurn: true,
+          suppressSequentialTurnAdvance: true,
+          entryTechnique: exchange?.entryTechnique?.id || null,
+          controlResponse: response.id,
+        },
+      });
     } else if (Number(exchange?.controlStaminaCost || 0) > 0) {
       spendCombatStamina({
         fighter: controller,
@@ -45585,55 +45722,12 @@ function CombatPage({ characters = [] }) {
 
         if (attackOfOpportunityAttacker) {
           addLog(`${attackOfOpportunityAttacker.name} gets an attack of opportunity against ${enemy.name}!`, "warning");
-          const attackerForAoO = attackOfOpportunityAttacker;
-          const targetForAoO = enemy.id;
-          const opportunityGrant = createAttackActionGrant(attackerForAoO.id, targetForAoO, "enemy-inline-attack-of-opportunity");
-          const opportunityExecutionKey = createAttackExecutionKey(attackerForAoO.id, targetForAoO, "enemy-inline-attack-of-opportunity", {
-            grant: opportunityGrant,
-            scheduledAtTurnToken: opportunityGrant.turnToken,
-            callbackSource: "enemy-inline-attack-of-opportunity-callback",
-            isDelayedCallback: true,
-            allowOutOfTurnAttack: true,
+          scheduleCanonicalOpportunityAttackRef.current?.({
+            attacker: attackOfOpportunityAttacker,
+            targetId: enemy.id,
+            source: "enemy-movement-attack-of-opportunity",
+            delayMs: 500,
           });
-
-          setTimeout(() => {
-            if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
-            if (!validateDelayedEnemyAttackCallbackOk({
-              actor: attackerForAoO,
-              targetId: targetForAoO,
-              executionKey: opportunityExecutionKey,
-              source: "enemy-inline-attack-of-opportunity-callback",
-              allowOutOfTurn: true,
-            })) return;
-            if (attackRef.current) {
-              attackRef.current(attackerForAoO, targetForAoO, {
-                allowOutOfTurnAttack: true,
-                attackActionId: opportunityExecutionKey,
-                attackActionGrant: opportunityGrant,
-                source: "attack-of-opportunity",
-              });
-            } else {
-              addLog(`Attack of opportunity delayed - attack system not ready`, "info");
-              setTimeout(() => {
-                if (combatOverRef.current || !combatActive || combatEndCheckRef.current) return;
-                if (!validateDelayedEnemyAttackCallbackOk({
-                  actor: attackerForAoO,
-                  targetId: targetForAoO,
-                  executionKey: opportunityExecutionKey,
-                  source: "enemy-inline-attack-of-opportunity-retry",
-                  allowOutOfTurn: true,
-                })) return;
-                if (attackRef.current) {
-                  attackRef.current(attackerForAoO, targetForAoO, {
-                    allowOutOfTurnAttack: true,
-                    attackActionId: opportunityExecutionKey,
-                    attackActionGrant: opportunityGrant,
-                    source: "attack-of-opportunity",
-                  });
-                }
-              }, 1000);
-            }
-          }, 500);
         }
 
         const distanceMoved = calculateDistance(currentPos, { x: targetX, y: targetY });
@@ -49676,6 +49770,7 @@ function CombatPage({ characters = [] }) {
         generationId: tacticalGeneration,
         combatSession: combatSessionRef.current,
         clock,
+        reactionRegistry: reactionOpportunityRegistryRef.current,
       });
       tacticalPulseRunRef.current = false;
       tacticalWalkPlansByActorRef.current.clear();
@@ -51784,7 +51879,10 @@ function CombatPage({ characters = [] }) {
           });
         }
       }
-      tacticalPulseRuntimeRef.current = createTacticalPulseRuntime({ clock: resetPulseClock });
+      tacticalPulseRuntimeRef.current = createTacticalPulseRuntime({
+        clock: resetPulseClock,
+        reactionRegistry: reactionOpportunityRegistryRef.current,
+      });
       tacticalWalkPlansByActorRef.current.clear();
       pendingTacticalMovePresentationByActorRef.current.clear();
       const combatReset = resetCombatExecutionState({

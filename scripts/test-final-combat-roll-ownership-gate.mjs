@@ -47,7 +47,8 @@ assert.match(combatPageSource, /source: enemyAttackSource/);
 assert.match(combatPageSource, /attackActionId: createAttackExecutionKey\(currentFighter\.id, targetToExecute\.id, "manual-attack"\)/);
 assert.match(combatPageSource, /source: "manual-attack"/);
 assert.match(combatPageSource, /allowOutOfTurnAttack: true/);
-assert.match(combatPageSource, /source: "attack-of-opportunity"/);
+assert.match(combatPageSource, /const scheduleCanonicalOpportunityAttack = useCallback/);
+assert.match(combatPageSource, /source\s*=\s*"attack-of-opportunity"/);
 
 assert.match(combatPageSource, /validateCombatRollOwnership\(\{\s+actorId: liveAttacker\?\.id,\s+targetId: defenderId,\s+executionKey: validationActionId,\s+source,/);
 assert.match(grappleActionsSource, /getStaleGrappleReason\("grapple-ground-attack-roll"\)/);

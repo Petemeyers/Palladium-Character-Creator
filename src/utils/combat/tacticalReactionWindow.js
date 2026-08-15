@@ -1,3 +1,10 @@
+import {
+  REACTION_STATUSES,
+  buildCanonicalReactionLifecycleRecord,
+  registerCanonicalReaction,
+  transitionCanonicalReaction,
+} from "./reactionResolution.js";
+
 const RESPONSE_TYPES = Object.freeze(["dodge", "parry", "shield-block", "decline"]);
 const FUTURE_RESPONSE_TYPES = Object.freeze([
   "riposte", "bind", "displacement", "grapple-entry", "disengagement",
@@ -102,11 +109,13 @@ export function createTacticalReactionRuntime({
   maxTerminalHistory = 128,
   maxResolutionHistory = 256,
   getReactionCapacity = () => 1,
+  reactionRegistry = new Map(),
 } = {}) {
   return {
     generationId: Number(generationId),
     combatSession: Number(combatSession),
     activeWindows: new Map(),
+    reactionRegistry,
     windowByExecutionKey: new Map(),
     responderOwnership: new Map(),
     budgets: new Map(),
@@ -223,6 +232,25 @@ export function openTacticalReactionWindow({
   const legalChoices = evaluateTacticalReactionChoices({ defender, attacker, attackType: intent.actionType, attackFamily: intent.weaponFamily });
   const budget = getTacticalReactionBudget(runtime, defenderId, pulseIndex, { emit: onEvent });
   const reactionWindowId = `${executionKey}:reaction`;
+  const lifecycle = buildCanonicalReactionLifecycleRecord({
+    opportunityId: reactionWindowId,
+    reactionId: reactionWindowId,
+    triggerType: "attack-defense",
+    sourceExecutionId: executionKey,
+    generationId: intent.generationId,
+    combatSession: intent.combatSession,
+    actorId: defenderId,
+    targetId: intent.actorId,
+    depth: Number(intent.reactionDepth || 0),
+    legalResponses: RESPONSE_TYPES.filter((type) => legalChoices[type]?.legal),
+    mode: "tactical-pulse",
+    metadata: {
+      sourceActionIntentId: intent.actionIntentId,
+      responseDeadlinePulse: pulseIndex + 1,
+    },
+  });
+  const registration = registerCanonicalReaction(runtime.reactionRegistry, lifecycle);
+  if (!registration.accepted) return registration;
   let window = freeze({
     reactionWindowId,
     generationId: intent.generationId,
@@ -297,6 +325,17 @@ export function submitTacticalReactionResponse({ runtime, reactionWindowId, resp
   if (!choice?.legal) return reject(choice?.reason || "reaction-response-illegal");
   const budget = getTacticalReactionBudget(runtime, responder, pulseIndex, { emit: onEvent });
   if (responseType !== "decline" && budget.remaining <= 0) return reject("reaction-budget-spent");
+  const admission = transitionCanonicalReaction(
+    runtime.reactionRegistry,
+    window.reactionWindowId,
+    REACTION_STATUSES.ADMITTED,
+    {
+      selectedResponse: responseType,
+      admittedAtPulse: pulseIndex,
+      selectionReason: selectionReason || (responseType === "decline" ? "manual-decline" : "manual-selection"),
+    },
+  );
+  if (!admission.accepted) return reject(admission.reason);
   const response = freeze({
     reactionResponseId: `${window.reactionWindowId}:${responder}:${responseType}`,
     reactionWindowId: window.reactionWindowId,
@@ -351,6 +390,22 @@ export function lockTacticalReactionWindow({ runtime, reactionWindowId, pulseInd
   } else {
     response = freeze({ ...response, state: "accepted", acceptedAtPulse: pulseIndex });
   }
+  const lifecycleStatus = expired
+    ? REACTION_STATUSES.EXPIRED
+    : REACTION_STATUSES.CONSUMED;
+  const lifecycleTransition = transitionCanonicalReaction(
+    runtime.reactionRegistry,
+    window.reactionWindowId,
+    lifecycleStatus,
+    {
+      selectedResponse: response.responseType,
+      terminalReason: expired
+        ? "response-deadline-expired"
+        : null,
+      consumedAtPulse: pulseIndex,
+    },
+  );
+  if (!lifecycleTransition.accepted) return lifecycleTransition;
   if (response.responseType !== "decline") {
     const consumptionKey = response.reactionResponseId;
     if (runtime.budgetConsumptionKeys.has(consumptionKey)) return { accepted: false, reason: "duplicate-reaction-budget-consumption" };
@@ -379,6 +434,16 @@ export function admitTacticalReactionResolution({ runtime, reactionWindowId, pul
   const window = runtime?.activeWindows?.get(String(reactionWindowId ?? ""));
   if (!window) return { accepted: false, reason: "reaction-window-not-active" };
   if (runtime.resolvedWindowIds.has(window.reactionWindowId) || runtime.defenseAdmissionKeys.has(window.reactionWindowId)) return { accepted: false, reason: "duplicate-canonical-defense-resolution" };
+  const lifecycleRecord = runtime.reactionRegistry.get(window.reactionWindowId);
+  if (lifecycleRecord?.status !== REACTION_STATUSES.EXPIRED) {
+    const lifecycleTransition = transitionCanonicalReaction(
+      runtime.reactionRegistry,
+      window.reactionWindowId,
+      REACTION_STATUSES.RESOLVING,
+      { resolvingAtPulse: pulseIndex },
+    );
+    if (!lifecycleTransition.accepted) return lifecycleTransition;
+  }
   const resolving = transitionWindow(window, "resolving", { resolvingAtPulse: pulseIndex });
   if (!resolving.accepted) return resolving;
   runtime.activeWindows.set(window.reactionWindowId, resolving.window);
@@ -391,6 +456,24 @@ export function completeTacticalReactionResolution({ runtime, reactionWindowId, 
   const window = runtime?.activeWindows?.get(String(reactionWindowId ?? ""));
   if (!window) return { accepted: false, reason: "reaction-window-not-active" };
   if (runtime.resolvedWindowIds.has(window.reactionWindowId)) return { accepted: false, reason: "duplicate-canonical-defense-resolution" };
+  const lifecycleRecord = runtime.reactionRegistry.get(window.reactionWindowId);
+  if (lifecycleRecord?.status !== REACTION_STATUSES.EXPIRED) {
+    const lifecycleTransition = transitionCanonicalReaction(
+      runtime.reactionRegistry,
+      window.reactionWindowId,
+      window.selectedPrimaryResponse?.responseType === "decline"
+        ? REACTION_STATUSES.DECLINED
+        : REACTION_STATUSES.RESOLVED,
+      {
+        resolvedAtPulse: pulseIndex,
+        result: result ?? null,
+        terminalReason: window.selectedPrimaryResponse?.responseType === "decline"
+          ? window.selectedPrimaryResponse?.selectionReason || "declined"
+          : null,
+      },
+    );
+    if (!lifecycleTransition.accepted) return lifecycleTransition;
+  }
   const completed = transitionWindow(window, "resolved", { resolvedAtPulse: pulseIndex, resolution: result ?? null });
   if (!completed.accepted) return completed;
   runtime.resolvedWindowIds.add(window.reactionWindowId);
@@ -408,6 +491,16 @@ export function invalidateTacticalReactionWindow({ runtime, reactionWindowId, pu
   const window = runtime?.activeWindows?.get(String(reactionWindowId ?? ""));
   if (!window) return { accepted: false, reason: "reaction-window-not-active" };
   const nextState = canceled ? "canceled" : "invalidated";
+  const lifecycleRecord = runtime.reactionRegistry.get(window.reactionWindowId);
+  if (lifecycleRecord && !["resolved", "declined", "expired", "invalidated", "rejected"].includes(lifecycleRecord.status)) {
+    const lifecycleTransition = transitionCanonicalReaction(
+      runtime.reactionRegistry,
+      window.reactionWindowId,
+      REACTION_STATUSES.INVALIDATED,
+      { terminalReason: reason, resolvedAtPulse: pulseIndex },
+    );
+    if (!lifecycleTransition.accepted) return lifecycleTransition;
+  }
   const terminal = transitionWindow(window, nextState, { terminalReason: reason, resolvedAtPulse: pulseIndex });
   if (!terminal.accepted) return terminal;
   runtime.activeWindows.delete(window.reactionWindowId);
@@ -463,6 +556,11 @@ export function cleanupTacticalReactionRuntime(runtime, reason = "combat-ended",
 export function auditTacticalReactionOwnership(runtime) {
   const windows = [...(runtime?.activeWindows?.values?.() || [])];
   const responderIds = [...(runtime?.responderOwnership?.keys?.() || [])];
+  const lifecycleRecords = [...(runtime?.reactionRegistry?.values?.() || [])]
+    .filter((record) => record?.mode === "tactical-pulse");
+  const activeLifecycleIds = new Set(lifecycleRecords
+    .filter((record) => !["resolved", "declined", "expired", "invalidated", "rejected"].includes(record.status))
+    .map((record) => record.reactionId));
   const duplicateExecutionKeys = windows.filter((window, index) => windows.findIndex((entry) => entry.sourceExecutionKey === window.sourceExecutionKey) !== index);
   return {
     openWindowCount: windows.length,
@@ -475,9 +573,15 @@ export function auditTacticalReactionOwnership(runtime) {
     responseHistoryCount: runtime?.responseHistory?.length || 0,
     budgetConsumptionCount: runtime?.budgetConsumptionKeys?.size || 0,
     defenseAdmissionCount: runtime?.defenseAdmissionKeys?.size || 0,
+    canonicalLifecycleCount: lifecycleRecords.length,
+    canonicalActiveLifecycleCount: activeLifecycleIds.size,
     postTerminalResponsesBlocked: runtime?.postTerminalResponsesBlocked || 0,
     postTerminalAttacksBlocked: runtime?.postTerminalAttacksBlocked || 0,
-    matches: duplicateExecutionKeys.length === 0 && responderIds.every((actorId) => runtime.activeWindows.has(runtime.responderOwnership.get(actorId))),
+    matches: duplicateExecutionKeys.length === 0 &&
+      responderIds.every((actorId) => runtime.activeWindows.has(runtime.responderOwnership.get(actorId))) &&
+      windows.every((window) => activeLifecycleIds.has(window.reactionWindowId) ||
+        ["locked", "resolving"].includes(window.state) &&
+        runtime.reactionRegistry.get(window.reactionWindowId)?.status === "expired"),
   };
 }
 

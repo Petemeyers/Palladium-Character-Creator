@@ -1,5 +1,9 @@
 import { DEFENSE_OUTCOMES, getExchangePairKey } from "./defenseOutcome.js";
-import { REACTION_STATUSES } from "./reactionResolution.js";
+import {
+  REACTION_STATUSES,
+  transitionCanonicalReaction,
+  validateCanonicalReactionOwnership,
+} from "./reactionResolution.js";
 
 export const DOMINANT_RESPONSE_TYPES = Object.freeze({
   RIPOSTE: "riposte",
@@ -165,18 +169,25 @@ export function buildDominantResponseOpportunity(context = {}) {
     opportunityId,
     reactionId: opportunityId,
     opportunityType: "dominant_opening",
+    reactionType: "dominant_opening",
+    triggerType: "dominant-parry",
     sourceExchangeId: exchange.exchangeId,
     sourceAttackExecutionKey: exchange.attackExecutionKey,
+    sourceExecutionId: exchange.attackExecutionKey,
+    sourceExecutionKey: exchange.attackExecutionKey,
     parentAttackExecutionKey: exchange.attackExecutionKey,
     generationId: exchange.generationId,
+    combatSession: exchange.generationId,
     round: exchange.round,
     initiativeTurnId: context.initiativeTurnId || null,
     actionSequence: exchange.createdAtActionSequence ?? context.actionSequence ?? 0,
     reactorId,
+    actorId: reactorId,
     targetId,
     defenseType: context.defenseType,
     defenseOutcome: exchange.parryOutcome,
     openingLevel: 2,
+    depth: 1,
     reactionDepth: 1,
     legalResponses: Object.freeze([...legalResponses]),
     responseCosts: Object.freeze({
@@ -190,6 +201,8 @@ export function buildDominantResponseOpportunity(context = {}) {
     recoveryPenalty: Number(context.recoveryPenalty ?? -2),
     selectedResponse: null,
     status: DOMINANT_OPPORTUNITY_STATUSES.OFFERED,
+    state: DOMINANT_OPPORTUNITY_STATUSES.OFFERED,
+    terminalReason: null,
     consumed: false,
     declined: false,
     expired: false,
@@ -208,17 +221,32 @@ export function validateDominantResponse({
   combatActive = true,
 } = {}) {
   const reject = (reason) => ({ valid: false, reason });
-  if (!combatActive) return reject("combat-ended");
-  if (!opportunity || !registryRecord || opportunity.opportunityId !== registryRecord.opportunityId) {
-    return reject("missing-opportunity");
+  const ownership = validateCanonicalReactionOwnership({
+    opportunity,
+    registryRecord,
+    generationId,
+    combatSession: generationId,
+    sourceExecutionId: opportunity?.sourceAttackExecutionKey,
+    actorId: reactorId,
+    targetId,
+    expectedStatuses: [DOMINANT_OPPORTUNITY_STATUSES.OFFERED],
+    combatActive,
+  });
+  if (!ownership.valid) {
+    const aliases = {
+      combat_ended: "combat-ended",
+      missing_reaction_record: "missing-opportunity",
+      reaction_not_in_expected_state: "opportunity-not-offered",
+      stale_generation: "stale-opportunity",
+      stale_combat_session: "stale-opportunity",
+      participant_mismatch: "participant-mismatch",
+      reaction_depth_cap: "reaction-depth-cap",
+    };
+    return reject(aliases[ownership.reason] || ownership.reason);
   }
-  if (registryRecord.status !== DOMINANT_OPPORTUNITY_STATUSES.OFFERED) return reject("opportunity-not-offered");
   if (!registryRecord.legalResponses.includes(selectedResponse)) return reject("response-not-legal");
-  if (registryRecord.generationId !== generationId || Number(registryRecord.round) !== Number(round)) {
+  if (Number(registryRecord.round) !== Number(round)) {
     return reject("stale-opportunity");
-  }
-  if (registryRecord.reactorId !== reactorId || registryRecord.targetId !== targetId) {
-    return reject("participant-mismatch");
   }
   if (
     !exchange ||
@@ -262,6 +290,9 @@ export function consumeDominantOpening({
     status: selectedResponse === DOMINANT_RESPONSE_TYPES.DECLINE
       ? DOMINANT_OPPORTUNITY_STATUSES.DECLINED
       : DOMINANT_OPPORTUNITY_STATUSES.CONSUMED,
+    state: selectedResponse === DOMINANT_RESPONSE_TYPES.DECLINE
+      ? DOMINANT_OPPORTUNITY_STATUSES.DECLINED
+      : DOMINANT_OPPORTUNITY_STATUSES.CONSUMED,
     consumed: selectedResponse !== DOMINANT_RESPONSE_TYPES.DECLINE,
     declined: selectedResponse === DOMINANT_RESPONSE_TYPES.DECLINE,
   });
@@ -281,22 +312,10 @@ export function consumeDominantOpening({
 }
 
 export function transitionDominantResponse(registry, opportunityId, nextStatus, patch = {}) {
-  const current = registry?.get?.(opportunityId);
-  if (!current) return { ok: false, reason: "missing-opportunity" };
-  const allowed = {
-    [DOMINANT_OPPORTUNITY_STATUSES.OFFERED]: [DOMINANT_OPPORTUNITY_STATUSES.EXPIRED],
-    [DOMINANT_OPPORTUNITY_STATUSES.CONSUMED]: [DOMINANT_OPPORTUNITY_STATUSES.RESOLVING, DOMINANT_OPPORTUNITY_STATUSES.EXPIRED],
-    [DOMINANT_OPPORTUNITY_STATUSES.RESOLVING]: [DOMINANT_OPPORTUNITY_STATUSES.RESOLVED, DOMINANT_OPPORTUNITY_STATUSES.EXPIRED],
-  };
-  if (!allowed[current.status]?.includes(nextStatus)) return { ok: false, reason: "invalid-transition", record: current };
-  const next = Object.freeze({
-    ...current,
-    ...patch,
-    status: nextStatus,
-    expired: nextStatus === DOMINANT_OPPORTUNITY_STATUSES.EXPIRED,
-  });
-  registry.set(opportunityId, next);
-  return { ok: true, record: next };
+  const transition = transitionCanonicalReaction(registry, opportunityId, nextStatus, patch);
+  return transition.accepted
+    ? { ok: true, record: transition.reaction }
+    : { ok: false, reason: transition.reason, record: transition.reaction };
 }
 
 export function createDominantControlState({

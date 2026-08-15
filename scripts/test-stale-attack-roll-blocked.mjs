@@ -16,17 +16,19 @@ assert.match(source, /active-fighter-mismatch/);
 assert.match(source, /turn-token-mismatch/);
 assert.match(source, /combat-session-mismatch/);
 assert.match(source, /allowOutOfTurnAttack/);
-assert.match(source, /source: "attack-of-opportunity"/);
+assert.match(source, /source\s*=\s*"attack-of-opportunity"/);
+assert.match(source, /const scheduleCanonicalOpportunityAttack = useCallback/);
 assert.doesNotMatch(source, /stale attack promise resolved with actor mismatch: expected=/);
 assert.match(source, /eventType:\s*"stale-attack-promise-ignored"/);
 assert.match(source, /expectedEnemyAttackExecutionKey/);
 
 const preRollIndex = source.indexOf('const preRollAttackBlock = getAttackRollOwnershipBlockReason("immediate-pre-roll")');
-const staminaIndex = source.indexOf("calculateAttackStaminaCost", preRollIndex);
+const staminaIndex = source.indexOf("calculateHybridWeaponAttackStaminaCost", preRollIndex);
 const diceIndex = source.indexOf("CryptoSecureDice.parseAndRoll", preRollIndex);
 assert.ok(preRollIndex > -1, "pre-roll stale attack guard should exist");
 assert.ok(staminaIndex > preRollIndex, "stale attack guard should run before stamina spend");
 assert.ok(diceIndex > preRollIndex, "stale attack guard should run before attack roll");
+assert.match(source, /const fallbackCost = calculateAttackStaminaCost\(/);
 
 assert.doesNotMatch(source, /stale attack roll detected: actor=/);
 

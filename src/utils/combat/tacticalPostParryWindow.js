@@ -3,6 +3,12 @@ import {
   DOMINANT_RESPONSE_TYPES,
   chooseDominantOpeningResponse,
 } from "./dominantOpeningResolution.js";
+import {
+  REACTION_STATUSES,
+  buildCanonicalReactionLifecycleRecord,
+  registerCanonicalReaction,
+  transitionCanonicalReaction,
+} from "./reactionResolution.js";
 
 const freeze = (value) => Object.freeze(value);
 const idOf = (actor) => String(actor?.id ?? actor?._id ?? actor?.actorId ?? "");
@@ -78,11 +84,13 @@ export function createTacticalPostParryRuntime({
   combatSession = 0,
   maxHistory = 128,
   maxClaims = 256,
+  reactionRegistry = new Map(),
 } = {}) {
   return {
     generationId: Number(generationId),
     combatSession: Number(combatSession),
     activeWindows: new Map(),
+    reactionRegistry,
     windowBySourceResponse: new Map(),
     sourceResponseOrder: [],
     responderOwnership: new Map(),
@@ -176,6 +184,28 @@ export function openTacticalPostParryWindow({
   if (!legalResponseTypes.length) return reject("no-legal-post-parry-response");
   const offerId = canonicalOffer.opportunityId || canonicalOffer.reactionId;
   const windowId = `${sourceResponseId}:post-parry`;
+  const lifecycle = buildCanonicalReactionLifecycleRecord({
+    opportunityId: windowId,
+    reactionId: windowId,
+    triggerType: defenseResult.parryQuality === DEFENSE_OUTCOMES.DOMINANT
+      ? "dominant-parry"
+      : "advantageous-parry",
+    sourceExecutionId: defenseResult.sourceExecutionKey,
+    generationId: runtime.generationId,
+    combatSession: runtime.combatSession,
+    actorId: responderId,
+    targetId,
+    depth: Number(canonicalOffer.reactionDepth ?? 1),
+    legalResponses: legalResponseTypes,
+    mode: "tactical-post-parry-adapter",
+    metadata: {
+      sourceReactionResponseId: sourceResponseId,
+      canonicalResponseOfferId: offerId,
+      responseDeadlinePulse: Number(pulseIndex) + 1,
+    },
+  });
+  const registration = registerCanonicalReaction(runtime.reactionRegistry, lifecycle);
+  if (!registration.accepted) return reject(registration.reason);
   let window = freeze({
     tacticalPostParryWindowId: windowId,
     generationId: runtime.generationId,
@@ -267,6 +297,13 @@ export function submitTacticalPostParryResponse({
   if (sourceExecutionKey !== undefined && sourceExecutionKey !== window.sourceExecutionKey) return reject("source-execution-mismatch");
   if (sourceReactionResponseId !== undefined && sourceReactionResponseId !== window.sourceReactionResponseId) return reject("source-response-mismatch");
   if (!window.legalResponseTypes.includes(responseType)) return reject("post-parry-response-not-legal");
+  const admission = transitionCanonicalReaction(
+    runtime.reactionRegistry,
+    window.tacticalPostParryWindowId,
+    REACTION_STATUSES.ADMITTED,
+    { selectedResponse: responseType, admittedAtPulse: Number(pulseIndex) },
+  );
+  if (!admission.accepted) return reject(admission.reason);
   const selected = freeze({ ...window, selectedResponseType: responseType, selectedAtPulse: Number(pulseIndex) });
   runtime.activeWindows.set(tacticalPostParryWindowId, selected);
   const selection = freeze({
@@ -283,6 +320,26 @@ export function submitTacticalPostParryResponse({
 }
 
 const finishWindow = (runtime, window, state, pulseIndex, terminalReason, result, onEvent) => {
+  const canonicalStatus = ({
+    resolved: REACTION_STATUSES.RESOLVED,
+    declined: REACTION_STATUSES.DECLINED,
+    expired: REACTION_STATUSES.EXPIRED,
+    canceled: REACTION_STATUSES.INVALIDATED,
+    invalidated: REACTION_STATUSES.INVALIDATED,
+  })[state];
+  const lifecycleRecord = runtime.reactionRegistry.get(window.tacticalPostParryWindowId);
+  if (canonicalStatus && lifecycleRecord && lifecycleRecord.status !== canonicalStatus) {
+    transitionCanonicalReaction(
+      runtime.reactionRegistry,
+      window.tacticalPostParryWindowId,
+      canonicalStatus,
+      {
+        terminalReason,
+        result: result || null,
+        resolvedAtPulse: Number(pulseIndex),
+      },
+    );
+  }
   const terminal = freeze({
     ...window,
     state,
@@ -369,6 +426,19 @@ export async function progressTacticalPostParryWindows({
       finishWindow(runtime, window, "expired", pulseIndex, "response-deadline-expired", null, emit);
       continue;
     }
+    const consumption = transitionCanonicalReaction(
+      runtime.reactionRegistry,
+      window.tacticalPostParryWindowId,
+      REACTION_STATUSES.CONSUMED,
+      {
+        selectedResponse: window.selectedResponseType,
+        consumedAtPulse: Number(pulseIndex),
+      },
+    );
+    if (!consumption.accepted) {
+      finishWindow(runtime, window, "invalidated", pulseIndex, consumption.reason, null, emit);
+      continue;
+    }
     const locked = freeze({ ...window, state: "locked", lockedAtPulse: Number(pulseIndex) });
     runtime.activeWindows.set(windowId, locked);
     emit(event("tactical-post-parry-window-locked", locked, pulseIndex, { previousState: "awaiting-selection", nextState: "locked", selectedResponseType: locked.selectedResponseType }));
@@ -390,6 +460,19 @@ export async function progressTacticalPostParryWindows({
       continue;
     }
     const resolving = freeze({ ...locked, state: "resolving", responseExecutionKey: executionKey });
+    const resolutionAdmission = transitionCanonicalReaction(
+      runtime.reactionRegistry,
+      window.tacticalPostParryWindowId,
+      REACTION_STATUSES.RESOLVING,
+      {
+        responseExecutionKey: executionKey,
+        resolvingAtPulse: Number(pulseIndex),
+      },
+    );
+    if (!resolutionAdmission.accepted) {
+      finishWindow(runtime, locked, "invalidated", pulseIndex, resolutionAdmission.reason, null, emit);
+      continue;
+    }
     runtime.activeWindows.set(windowId, resolving);
     emit(event("tactical-post-parry-resolution-admitted", resolving, pulseIndex, { previousState: "locked", nextState: "resolving", selectedResponseType: resolving.selectedResponseType, responseExecutionKey: executionKey }));
     let result;
@@ -439,6 +522,12 @@ export function cleanupTacticalPostParryRuntime(runtime, reason = "combat-ended"
   };
   const events = [];
   for (const window of runtime.activeWindows.values()) {
+    transitionCanonicalReaction(
+      runtime.reactionRegistry,
+      window.tacticalPostParryWindowId,
+      REACTION_STATUSES.INVALIDATED,
+      { terminalReason: reason },
+    );
     const canceled = freeze({ ...window, state: "canceled", terminalReason: reason });
     retain(runtime.terminalHistory, canceled, runtime.maxHistory);
     events.push(event("tactical-post-parry-window-canceled", canceled, window.openedAtPulse, {
@@ -464,6 +553,11 @@ export function cleanupTacticalPostParryRuntime(runtime, reason = "combat-ended"
 export function auditTacticalPostParryOwnership(runtime) {
   const activeWindows = [...(runtime?.activeWindows?.values?.() || [])];
   const ownerIds = [...(runtime?.responderOwnership?.keys?.() || [])];
+  const lifecycleRecords = [...(runtime?.reactionRegistry?.values?.() || [])]
+    .filter((record) => record?.mode === "tactical-post-parry-adapter");
+  const activeLifecycleIds = new Set(lifecycleRecords
+    .filter((record) => !terminalStates.has(record.status))
+    .map((record) => record.reactionId));
   return {
     openPostParryWindowCount: activeWindows.length,
     awaitingSelectionCount: activeWindows.filter((window) => window.state === "awaiting-selection").length,
@@ -475,9 +569,12 @@ export function auditTacticalPostParryOwnership(runtime) {
     consumedOfferKeyCount: runtime?.consumedOfferKeys?.size || 0,
     responseExecutionKeyCount: runtime?.executionKeys?.size || 0,
     sourceResponseIdentityCount: runtime?.windowBySourceResponse?.size || 0,
+    canonicalLifecycleCount: lifecycleRecords.length,
+    canonicalActiveLifecycleCount: activeLifecycleIds.size,
     pendingMovementResponseCount: activeWindows.filter((window) => window.selectedResponseType === "disengagement").length,
     pendingGrappleResponseCount: activeWindows.filter((window) => window.selectedResponseType === "grapple-entry").length,
     postTerminalExecutionsBlocked: runtime?.postTerminalExecutionsBlocked || 0,
-    matches: ownerIds.every((actorId) => runtime.activeWindows.get(runtime.responderOwnership.get(actorId))?.parryingDefenderId === actorId),
+    matches: ownerIds.every((actorId) => runtime.activeWindows.get(runtime.responderOwnership.get(actorId))?.parryingDefenderId === actorId) &&
+      activeWindows.every((window) => activeLifecycleIds.has(window.tacticalPostParryWindowId)),
   };
 }

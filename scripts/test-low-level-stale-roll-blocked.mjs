@@ -21,10 +21,11 @@ assert.match(combatPageSource, /const preRollOwnershipBlock = getAttackRollOwner
 assert.match(combatPageSource, /const preDamageOwnershipBlock = getAttackRollOwnershipBlockReason\("damage-roll-pre-hp"\)/);
 
 const preStaminaIndex = combatPageSource.indexOf('getAttackRollOwnershipBlockReason("attack-roll-pre-stamina")');
-const staminaIndex = combatPageSource.indexOf("calculateAttackStaminaCost", preStaminaIndex);
+const staminaIndex = combatPageSource.indexOf("calculateHybridWeaponAttackStaminaCost", preStaminaIndex);
 const rollIndex = combatPageSource.indexOf("CryptoSecureDice.parseAndRoll", preStaminaIndex);
 assert.ok(preStaminaIndex !== -1 && staminaIndex !== -1 && rollIndex !== -1);
 assert.ok(preStaminaIndex < staminaIndex, "stale guard should run before attack stamina spend");
 assert.ok(preStaminaIndex < rollIndex, "stale guard should run before attack roll");
+assert.match(combatPageSource, /const fallbackCost = calculateAttackStaminaCost\(/);
 
 console.log("low-level stale roll block tests passed");
