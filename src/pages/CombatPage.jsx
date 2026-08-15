@@ -85,6 +85,13 @@ import {
   adaptSelectableActorToCombatant,
   getSelectableActorAttackForDistance,
 } from "../utils/selectableActorAdapter.js";
+import {
+  applyCanonicalCombatEffect,
+} from "../utils/combat/applyCanonicalCombatEffect.js";
+import {
+  isCanonicalResolvedEffectEvent,
+} from "../utils/combat/canonicalResolvedCombatEffect.js";
+import { PHASE3_CANONICAL_EFFECT_FIXTURE } from "../utils/combat/phase3CanonicalEffectFixture.js";
 import CombatActionsPanel from "../components/CombatActionsPanel.jsx";
 import EncounterReadinessPanel from "../components/EncounterReadinessPanel.jsx";
 import InitiativeSetupPreview from "../components/InitiativeSetupPreview.jsx";
@@ -7558,6 +7565,9 @@ function CombatPage({ characters = [] }) {
   // =========================
   const engineRef = useRef(null);
   const engineEventSubscribersRef = useRef(new Set());
+  const canonicalEffectAuthoritiesRef = useRef({});
+  const resolvedCanonicalEffectKeysRef = useRef(new Set());
+  const lastCanonicalEffectResultRef = useRef(null);
 
   // Ref for endTurn to avoid initialization order issues
   const endTurnRef = useRef(null);
@@ -7655,14 +7665,33 @@ function CombatPage({ characters = [] }) {
         amount,
         sourceId: caster,
         kind: "technique",
+        attackType: technique?.attackType || "melee",
         damageType: technique?.damageType || "training",
+        protectionPolicy: technique?.protectionPolicy || "physical-armor",
+        delivery: technique?.delivery || technique?.deliveryType || "physical-contact",
+        hitLocation: technique?.hitLocation || null,
+        controlMode: meta?.controlMode,
         breakdown: {
           base: amount,
           final: amount,
           type: technique?.damageType || "training",
           source: "localResolveTechniqueImpact",
         },
-        meta: castId ? { castId } : undefined,
+        canonicalEffect: {
+          family: "physical-contact",
+          delivery: technique?.delivery || "physical-contact",
+          protectionPolicy: technique?.protectionPolicy || "physical-armor",
+          hitLocationPolicy: technique?.hitLocation ? "supplied" : "required",
+          kind: "technique",
+          attackType: technique?.attackType || "melee",
+          damageType: technique?.damageType || "training",
+        },
+        meta: {
+          ...(castId ? { castId } : {}),
+          turnToken: meta?.turnToken ?? null,
+          combatSession: meta?.combatSession,
+          controlMode: meta?.controlMode,
+        },
       });
     }
 
@@ -8103,6 +8132,61 @@ function CombatPage({ characters = [] }) {
       // No action needed here, but we could add a visual indicator if needed
     }
 
+    if (e.type === "HEAL" || (e.type === "DAMAGE" && (isCanonicalResolvedEffectEvent(e) || e.vsArmor === true))) {
+      if (e.type === "DAMAGE" && e.vsArmor === true) {
+        return;
+      }
+      const liveList = fightersRef.current ?? fighters;
+      const liveContext = {
+        combatActive: Boolean(combatActiveRef.current),
+        combatOver: Boolean(combatOverRef.current || combatEndCheckRef.current),
+        combatSession: combatSessionRef.current,
+        turnToken: currentTurnTokenRef.current,
+        fighters: liveList,
+        pendingTechnique: activeTechniqueImpactRef.current,
+        pendingTactical: activeTacticalImpactRef.current,
+        resolvedKeys: resolvedCanonicalEffectKeysRef.current,
+      };
+      const result = applyCanonicalCombatEffect({
+        event: e,
+        fighters: liveList,
+        liveContext,
+        authorities: canonicalEffectAuthoritiesRef.current,
+      });
+      lastCanonicalEffectResultRef.current = {
+        accepted: result.accepted,
+        reason: result.reason,
+        appliedAmount: result.appliedAmount,
+        previousHP: result.previousHP,
+        nextHP: result.nextHP,
+        mutated: result.mutated,
+        mutationKey: result.mutationKey,
+        family: result.effect?.family || null,
+        protectionPolicy: result.effect?.protectionPolicy || null,
+        originControlMode: result.originControlMode || null,
+        armorConsulted: result.protection?.armorConsulted === true,
+        hitLocation: result.protection?.hitLocation?.location || result.effect?.hitLocation || null,
+      };
+      for (const logEntry of result.logs || []) {
+        addLog?.(logEntry, logEntry.type || (result.accepted ? "combat" : "warning"));
+      }
+      if (!result.accepted) {
+        return;
+      }
+      const casterId = result.effect?.sourceId;
+      const isTechniqueDamage = result.effect?.kind === "technique";
+      const nextFighters = !isTechniqueDamage || !casterId
+        ? result.fighters
+        : result.fighters.map((fighter) => {
+            if (String(fighter?.id) !== String(casterId)) return fighter;
+            const live = liveList.find((x) => String(x.id) === String(casterId));
+            return preserveCasterstamina(live, fighter, casterId);
+          });
+      fightersRef.current = nextFighters;
+      setFighters(nextFighters);
+      return;
+    }
+
     // Handle attack resolution events (from AoO or normal attacks)
     if (e.type === "ATTACK_ROLL" || e.type === "DAMAGE" || e.type === "MISS" || e.type === "CRIT" || e.type === "HP_CHANGED") {
       // These are already handled by existing combat event handlers
@@ -8117,32 +8201,17 @@ function CombatPage({ characters = [] }) {
         );
       }
       if (e.type === "DAMAGE") {
-        // Apply damage to target
-        const { targetId, amount, sourceId } = e;
-        const isTechniqueDamage =
-          e?.kind === "technique" ||
-          e?.damageType === "training" ||
-          String(e?.breakdown?.type || "").toLowerCase() === "technique";
-        const casterId =
-          typeof sourceId === "string" || typeof sourceId === "number"
-            ? sourceId
-            : sourceId?.id ?? null;
+        if (isCanonicalResolvedEffectEvent(e)) {
+          return;
+        }
+        const { targetId, amount } = e;
         if (targetId && amount) {
-          setFighters((prev) => {
-            const liveList = fightersRef.current ?? prev;
-            const next = prev.map((f) => {
-              if (f.id !== targetId) return f;
-              const currentHP = f.currentHP ?? f.hp ?? 0;
-              const newHP = Math.max(0, currentHP - amount);
-              return { ...f, currentHP: newHP, hp: newHP };
-            });
-            if (!isTechniqueDamage || !casterId) return next;
-            return next.map((f) => {
-              if (f.id !== casterId) return f;
-              const live = liveList.find((x) => x.id === casterId);
-              return preserveCasterstamina(live, f, casterId);
-            });
-          });
+          setFighters((prev) => prev.map((f) => {
+            if (f.id !== targetId) return f;
+            const currentHP = f.currentHP ?? f.hp ?? 0;
+            const newHP = Math.max(0, currentHP - amount);
+            return { ...f, currentHP: newHP, hp: newHP };
+          }));
         }
       }
     }
@@ -10596,6 +10665,16 @@ function CombatPage({ characters = [] }) {
       }
     }
   }, [addLog, getCombatantHP, MIN_COMBAT_HP]);
+
+  canonicalEffectAuthoritiesRef.current = {
+    getFighterHP,
+    clampHP,
+    applyHPToFighter,
+    rollHitLocation: rollImpactLocation,
+    resolveArmorContact,
+    resolveLayeredArmorImpact,
+    applyArmorImpactToFighter,
+  };
 
   const applyCriticalBleedingForNewMeleeRound = useCallback(
     (fighter, nextMeleeRound) => {
@@ -49027,6 +49106,7 @@ function CombatPage({ characters = [] }) {
     else rngStateRef.current = null;
     activeCastIdsRef.current.clear(); // Clear any stale cast IDs
     resolvedTechniqueEffectsRef.current.clear(); // Clear any stale technique effects
+    resolvedCanonicalEffectKeysRef.current.clear();
     activeTechniqueImpactRef.current = null; // Clear stale delayed technique turn ownership
     techniqueImpactTurnEndHandledRef.current = null;
     combatCastGuardRef.current.clear(); // Clear cast guard for new combat
@@ -49200,6 +49280,7 @@ function CombatPage({ characters = [] }) {
         tacticalUseId,
         turnToken: tacticalActionToken,
         combatSession: combatSessionRef.current,
+        controlMode: liveUser?.controlMode || userFighter?.controlMode || "unspecified",
       },
       state,
     });
@@ -49268,6 +49349,7 @@ function CombatPage({ characters = [] }) {
   useEffect(() => {
     activeCastIdsRef.current.clear();
     resolvedTechniqueEffectsRef.current.clear();
+    resolvedCanonicalEffectKeysRef.current.clear();
   }, [turnCounter]);
 
 
@@ -49587,7 +49669,14 @@ function CombatPage({ characters = [] }) {
         caster: caster.id,
         target: target?.id ?? target ?? null,
         technique,
-        meta: { castId, flightMs, turnToken: techniqueActionToken, combatSession: combatSessionRef.current },
+        meta: {
+          castId,
+          flightMs,
+          turnToken: techniqueActionToken,
+          combatSession: combatSessionRef.current,
+          controlMode: liveCasterForTechniqueAction?.controlMode || caster?.controlMode || meta?.controlMode || "unspecified",
+          source: meta?.source,
+        },
         state,
       });
     } catch (err) {
@@ -51345,6 +51434,88 @@ function CombatPage({ characters = [] }) {
       addLog(`Error resetting combat: ${error.message}`, "error");
     }
   }
+
+  useEffect(() => {
+    if (!(import.meta.env?.DEV || import.meta.env?.MODE === "development")) return undefined;
+    if (typeof window === "undefined") return undefined;
+    window[PHASE3_CANONICAL_EFFECT_FIXTURE.windowApiName] = {
+      version: "8d-phase3",
+      fixture: PHASE3_CANONICAL_EFFECT_FIXTURE,
+      applyEffect(spec = {}) {
+        const live = fightersRef.current || [];
+        const sourceId = spec.sourceId || live[0]?.id;
+        const targetId = spec.targetId || live.find((fighter) => fighter.id !== sourceId)?.id;
+        if (!sourceId || !targetId) {
+          return { ok: false, message: "fixture requires two live combatants" };
+        }
+        const kind = spec.kind || PHASE3_CANONICAL_EFFECT_FIXTURE.physical.kind;
+        const preset = kind === "tactical"
+          ? PHASE3_CANONICAL_EFFECT_FIXTURE.bypass
+          : kind === "healing"
+            ? PHASE3_CANONICAL_EFFECT_FIXTURE.heal
+            : PHASE3_CANONICAL_EFFECT_FIXTURE.physical;
+        const executionId = `phase3-fixture:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+        const turnToken = currentTurnTokenRef.current;
+        const combatSession = combatSessionRef.current;
+        if (kind === "tactical") {
+          activeTacticalImpactRef.current = {
+            id: executionId,
+            userId: sourceId,
+            combatSession,
+            turnToken,
+          };
+        } else if (kind !== "healing") {
+          activeTechniqueImpactRef.current = {
+            castId: executionId,
+            casterId: sourceId,
+            combatSession,
+            turnToken,
+          };
+        }
+        const event = {
+          type: spec.eventType || (kind === "healing" ? "HEAL" : "DAMAGE"),
+          targetId,
+          sourceId,
+          amount: Number(spec.amount ?? preset.amount),
+          kind,
+          attackType: spec.attackType || preset.attackType,
+          damageType: spec.damageType || preset.damageType,
+          protectionPolicy: spec.protectionPolicy || preset.protectionPolicy,
+          delivery: spec.delivery || preset.delivery,
+          power: spec.label || preset.label,
+          executionId,
+          controlMode: spec.controlMode || "manual",
+          meta: {
+            castId: kind === "tactical" || kind === "healing" ? null : executionId,
+            tacticalUseId: kind === "tactical" ? executionId : null,
+            turnToken,
+            combatSession,
+            controlMode: spec.controlMode || "manual",
+          },
+        };
+        handleEngineEventRef.current?.(event);
+        const target = (fightersRef.current || []).find((fighter) => fighter.id === targetId);
+        return {
+          ok: true,
+          executionId,
+          targetId,
+          sourceId,
+          hp: target?.currentHP ?? target?.hp ?? null,
+          aliases: {
+            currentHP: target?.currentHP,
+            hp: target?.hp,
+            HP: target?.HP,
+          },
+          result: lastCanonicalEffectResultRef.current,
+        };
+      },
+    };
+    return () => {
+      if (window[PHASE3_CANONICAL_EFFECT_FIXTURE.windowApiName]) {
+        delete window[PHASE3_CANONICAL_EFFECT_FIXTURE.windowApiName];
+      }
+    };
+  });
 
   // Weapon management functions
   function handleChangeWeapon(fighterId, slotIndex) {

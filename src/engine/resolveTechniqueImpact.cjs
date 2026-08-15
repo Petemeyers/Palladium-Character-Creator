@@ -4,6 +4,7 @@ const { normalizeDuration } = require("./utils/normalizeDuration.cjs");
 const { applyStatus } = require("./statusEngine.cjs");
 const { resolveDamage } = require("./damageEngine.cjs");
 const { resolveSave } = require("./saveEngine.cjs");
+const { attachCanonicalResolvedEffect } = require("./attachCanonicalResolvedEffect.cjs");
 
 function rollDice(formula) {
   const m = String(formula).match(/^(\d+)d(\d+)$/i);
@@ -120,16 +121,26 @@ module.exports = function resolveTechniqueImpact(payload) {
         meta: castId ? { castId } : undefined,
       });
     } else {
-      events.push({
+      events.push(attachCanonicalResolvedEffect({
         type: "DAMAGE",
         targetId: targetF.id,
         amount: out.final,
         sourceId: caster,
         kind: "technique",
+        attackType: technique.attackType || "melee",
         damageType: out.breakdown.type,
         breakdown: out.breakdown,
-        meta: castId ? { castId } : undefined,
-      });
+        protectionPolicy: technique.protectionPolicy,
+        delivery: technique.delivery || technique.deliveryType,
+        hitLocation: technique.hitLocation || null,
+        controlMode: meta?.controlMode,
+        meta: {
+          ...(castId ? { castId } : {}),
+          turnToken: meta?.turnToken ?? null,
+          combatSession: meta?.combatSession,
+          controlMode: meta?.controlMode,
+        },
+      }, { kind: "technique", technique, meta }));
     }
 
     if (technique.status) {

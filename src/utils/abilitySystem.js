@@ -23,6 +23,11 @@
  */
 
 import { rollDice } from "./dice.js";
+import {
+  applyHPToFighter,
+  clampHP,
+  getFighterHP,
+} from "./combat/canonicalHpAuthority.js";
 import { createCanonicalFlightState, getCanonicalAltitude, isCanonicallyAirborne } from "./combat/canonicalFlightState.js";
 import { lookupSkill } from "./skillSystem.js";
 
@@ -426,16 +431,13 @@ export function applyBioRegeneration(fighter, meleeRound = 1) {
 
   // Roll healing
   const healed = rollDice(regen.rate);
-  const maxHP = fighter.maxHP || fighter.HP || 100;
-  const currentHP = fighter.currentHP || fighter.hp || fighter.currentHP || 0;
+  const currentHP = getFighterHP(fighter);
 
-  if (currentHP >= maxHP) return null; // Already at full HP
+  const newHP = clampHP(currentHP + healed, fighter);
+  if (currentHP >= newHP) return null; // Already at full HP
 
-  const newHP = Math.min(currentHP + healed, maxHP);
   const actualHealed = newHP - currentHP;
-
-  if (fighter.currentHP !== undefined) fighter.currentHP = newHP;
-  if (fighter.hp !== undefined) fighter.hp = newHP;
+  applyHPToFighter(fighter, newHP, { updateStatus: false });
 
   const intervalText = intervalCount > 1 ? ` (every ${intervalCount} melees)` : "";
   return {

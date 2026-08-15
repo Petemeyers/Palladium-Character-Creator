@@ -217,7 +217,18 @@ function advanceStatuses(state, { now, rollDice, ruleset }) {
             kind: "status",
             damageType: out.breakdown.type,
             statusKey: s.key,
+            executionId: `status:${s.key}:${f.id}:${now}`,
             breakdown: out.breakdown,
+            protectionPolicy: "bypass-physical",
+            delivery: "status",
+            canonicalEffect: {
+              family: "status",
+              delivery: "status",
+              protectionPolicy: "bypass-physical",
+              hitLocationPolicy: "not-applicable",
+              kind: "status",
+              damageType: out.breakdown.type,
+            },
           });
           events.push({
             type: "LOG",

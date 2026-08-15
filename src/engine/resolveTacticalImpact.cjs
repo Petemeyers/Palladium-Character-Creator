@@ -10,6 +10,7 @@ const { normalizeDuration } = require("./utils/normalizeDuration.cjs");
 const { applyStatus } = require("./statusEngine.cjs");
 const { resolveDamage } = require("./damageEngine.cjs");
 const { resolveSave } = require("./saveEngine.cjs");
+const { attachCanonicalResolvedEffect } = require("./attachCanonicalResolvedEffect.cjs");
 
 function rollDice(formula) {
   if (CryptoSecureDice?.parseAndRoll) {
@@ -40,6 +41,9 @@ function normalizePower(power) {
     attackType: power.attackType ?? "utility",
     saveType: power.saveType ?? null,
     damage: power.damage,
+    damageType: power.damageType,
+    protectionPolicy: power.protectionPolicy,
+    delivery: power.delivery || power.deliveryType,
     duration: power.duration,
     category: power.category,
     effect: power.effect,
@@ -114,16 +118,19 @@ function handleMentalAttack({ user, targetF, power, events, userLevel = 1, state
         message: `Ã°Å¸â€ºÂ¡Ã¯Â¸Â ${targetF.name} is immune to ${out.breakdown.type}!`,
       });
     } else {
-      events.push({
+      events.push(attachCanonicalResolvedEffect({
         type: "DAMAGE",
         targetId: targetF.id,
         amount: out.final,
         sourceId: user,
         kind: "tactical",
+        attackType: power.attackType,
         damageType: out.breakdown.type,
         power: power.name,
         breakdown: out.breakdown,
-      });
+        protectionPolicy: power.protectionPolicy,
+        delivery: power.delivery || power.deliveryType,
+      }, { kind: "tactical", power }));
 
       events.push({
         type: "LOG",
@@ -247,16 +254,19 @@ function handleRangedDamage({ user, targetF, power, events, ruleset }) {
       message: `Ã°Å¸â€ºÂ¡Ã¯Â¸Â ${targetF.name} is immune to ${out.breakdown.type}!`,
     });
   } else {
-    events.push({
+    events.push(attachCanonicalResolvedEffect({
       type: "DAMAGE",
       targetId: targetF.id,
       amount: out.final,
       sourceId: user,
       kind: "tactical",
+      attackType: power.attackType,
       damageType: out.breakdown.type,
       power: power.name,
       breakdown: out.breakdown,
-    });
+      protectionPolicy: power.protectionPolicy,
+      delivery: power.delivery || power.deliveryType,
+    }, { kind: "tactical", power }));
 
     events.push({
       type: "LOG",
@@ -301,13 +311,17 @@ function handleHealing({ user, targetF, power, events }) {
   // Parse damage formula as healing amount
   const heal = Math.abs(rollDice(power.damage));
 
-  events.push({
+  events.push(attachCanonicalResolvedEffect({
     type: "HEAL",
     targetId,
     amount: heal,
     sourceId: user,
-    kind: "tactical",
-  });
+    kind: "healing",
+    attackType: "healing",
+    power: power.name,
+    protectionPolicy: "not-applicable",
+    delivery: "healing",
+  }, { kind: "healing", power }));
 
   events.push({
     type: "LOG",
@@ -333,6 +347,7 @@ module.exports = function resolveTacticalImpact(payload) {
     targetId: targetId ?? null,
     turnToken: meta?.turnToken ?? null,
     combatSession: meta?.combatSession,
+    controlMode: meta?.controlMode,
   };
   const finish = () => ({ ok: true, events: attachTacticalMeta(events, tacticalMeta) });
 
