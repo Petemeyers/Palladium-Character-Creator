@@ -1,74 +1,76 @@
+import {
+  removeOrthogonalStructureRunsOwnedByCell,
+} from "../utils/maps/orthogonalStructureAuthority.js";
+import { applyOrthogonalHexStructureWallLine } from "../utils/maps/orthogonalStructureGenerator.js";
+import {
+  applyGridStructureEdgeEdit,
+  deleteGridCellStructures,
+} from "../utils/maps/gridStructureAuthority.js";
+import { applyGridStructureWallLine } from "../utils/maps/gridStructureGenerator.js";
+import {
+  applyWaterEnvironmentToCell,
+  getWaterEnvironmentFromCell,
+} from "../utils/maps/waterTraversalAuthority.js";
+import {
+  createBridgeOnMap,
+  deleteBridgeFromMap,
+} from "../utils/maps/bridgeLayerAuthority.js";
+import {
+  checkpointMapEditorHistory,
+  createMapEditorHistory,
+  createMapEditorSnapshot,
+  getMapEditorHistoryState,
+  redoMapEditorHistory,
+  resetMapEditorHistory,
+  undoMapEditorHistory,
+} from "../utils/maps/mapEditorHistoryAuthority.js";
+import {
+  applySquareStructureRoom,
+  applySquareStructureWallLine,
+  generateSquareBuilding,
+} from "../utils/maps/squareStructureGenerator.js";
+import { applySquareStructureEdgeEdit } from "../utils/maps/squareStructureAuthority.js";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Badge,
   Box,
   Button,
-  Divider,
-  FormControl,
-  FormLabel,
+  ButtonGroup,
+  Grid,
+  GridItem,
   HStack,
   Input,
-  Select,
   Text,
-  Textarea,
   VStack,
   useToast,
 } from "@chakra-ui/react";
 import TacticalMap from "../components/TacticalMap.jsx";
 import HexArena3D from "../components/HexArena3D.jsx";
-import { TERRAIN_TYPES, LIGHTING_CONDITIONS } from "../utils/terrainSystem";
 import { GRID_CONFIG } from "../data/movementRules";
 import { axialToOffset, offsetToAxial } from "../utils/hexGridMath";
 import { getHexesInRadius } from "../utils/mapBrush.js";
+import MapMakerToolSidebar from "../components/maps/MapMakerToolSidebar.jsx";
+import MapMakerInspectorPanel from "../components/maps/MapMakerInspectorPanel.jsx";
 import {
-  MAP_MIN_HEIGHT,
-  MAP_MAX_HEIGHT,
-  clampMapHeight,
-} from "../utils/mapHeightConstants.js";
-
-const STORAGE_KEY = "mapMaker.savedMaps.v1";
-const MAP_BUILDER_TERRAIN_OPTIONS = [
-  { key: "grass", label: "Grass" },
-  { key: "forest", label: "Forest" },
-  { key: "water", label: "Water" },
-  { key: "rock", label: "Rock / Stone" },
-  { key: "sand", label: "Sand / Dirt" },
-  { key: "road", label: "Road" },
-];
-const MAP_BUILDER_3D_BRUSH_MODES = [
-  { key: "top-terrain", label: "Top Terrain Paint" },
-  { key: "wall-terrain", label: "Wall Paint" },
-  { key: "height-raise", label: "Height Raise" },
-  { key: "height-lower", label: "Height Lower" },
-];
-const MAP_BUILDER_PROP_PALETTE = [
-  {
-    type: "tree",
-    name: "Tree",
-    modelUrl: null,
-    rotation: 0,
-    scale: 1,
-    blocksMovement: true,
-    blocksLineOfSight: true,
-  },
-  {
-    type: "boulder",
-    name: "Boulder",
-    modelUrl: null,
-    rotation: 0,
-    scale: 1,
-    blocksMovement: true,
-    blocksLineOfSight: true,
-  },
-  {
-    type: "crate",
-    name: "Crate",
-    modelUrl: null,
-    rotation: 0,
-    scale: 1,
-    blocksMovement: true,
-    blocksLineOfSight: false,
-  },
-];
+  BATTLEFIELD_FOG,
+  BATTLEFIELD_MAP_SOURCES,
+  normalizeBattlefieldMap,
+} from "../utils/maps/battlefieldMapAuthority.js";
+import { saveBattlefieldMapToLibrary } from "../utils/maps/battlefieldMapLibrary.js";
+import {
+  createBattlefieldProp,
+  getBattlefieldPropDefinition,
+  getBattlefieldPropOffset,
+  normalizeBattlefieldProp,
+} from "../utils/maps/battlefieldPropCatalog.js";
+import { launchBattlefieldTestBattle } from "../utils/maps/battlefieldTestBattle.js";
+import { FOG_LABELS, LIGHTING_LABELS } from "../utils/maps/battlefieldMapUiModel.js";
+import { clampMapHeight } from "../utils/mapHeightConstants.js";
+import {
+  MAP_EDITOR_TOOLS,
+  deriveMapEditorInteractionState,
+} from "../utils/maps/mapEditorInteractionAuthority.js";
+import { getBattlefieldCellEdgeTransitions } from "../utils/maps/battlefieldSlopeAuthority.js";
 
 function safeJsonParse(value, fallback) {
   try {
@@ -142,6 +144,7 @@ function gridToSavedHexes(grid) {
         moveCost: Number.isFinite(cell?.moveCost) ? cell.moveCost : 1,
         cover: Number.isFinite(cell?.cover) ? cell.cover : 0,
         blocksLineOfSight: cell?.blocksLineOfSight === true,
+        edgeTransitions: cell?.edgeTransitions ? { ...cell.edgeTransitions } : undefined,
       });
     });
   });
@@ -197,35 +200,72 @@ function normalizeGridHeights(grid) {
   });
 }
 
-function normalizeMapProps(props) {
+function normalizeMapProps(props, mapDefinition = {}) {
   if (!Array.isArray(props)) return [];
   return props
-    .filter((prop) => prop && Number.isFinite(Number(prop.q)) && Number.isFinite(Number(prop.r)))
-    .map((prop) => ({
-      id: prop.id || `map-prop-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      type: prop.type || "crate",
-      name: prop.name || prop.type || "Prop",
-      modelUrl: prop.modelUrl || null,
-      q: Number(prop.q),
-      r: Number(prop.r),
-      rotation: Number(prop.rotation) || 0,
-      scale: Number(prop.scale) || 1,
-      blocksMovement: prop.blocksMovement !== false,
-      blocksLineOfSight: prop.blocksLineOfSight === true,
-    }));
+    .filter(Boolean)
+    .map((prop, index) => {
+      const normalized = normalizeBattlefieldProp(prop, { id: prop.id || `map-prop-${index}` });
+      const offset = getBattlefieldPropOffset(normalized, mapDefinition);
+      if (!offset) return null;
+      const axial = offsetToAxial(offset.x, offset.y);
+      return normalizeBattlefieldProp({
+        ...normalized,
+        q: axial.q,
+        r: axial.r,
+        x: offset.x,
+        y: offset.y,
+        coordinateSpace: "axial",
+      });
+    })
+    .filter(Boolean);
 }
 
 export default function MapMakerPage() {
   const toast = useToast();
   const arena3DRef = useRef(null);
+  const editorHistoryRef = useRef(createMapEditorHistory({ limit: 100 }));
+  const [editorHistoryRevision, setEditorHistoryRevision] = useState(0);
 
-  const [show3DView, setShow3DView] = useState(true);
+  const [viewMode, setViewMode] = useState("2d"); // "2d" | "3d" | "split"
+  const [activeEditorTool, setActiveEditorTool] = useState(MAP_EDITOR_TOOLS.TERRAIN);
+  const [structureGeneratorConfig, setStructureGeneratorConfig] = useState({
+    mode: "edge",
+    kind: "wall",
+    material: "wood",
+    heightFeet: 10,
+    doorOpen: false,
+    precisionWindowStyle: "open",
+    buildingTemplate: "tavern",
+    buildingSeed: "building-1",
+    buildingWealth: "common",
+    buildingWindowStyle: "auto",
+    furnish: true,
+    assetUrl: "",
+    bridgeMaterial: "wood",
+    bridgeWidthFeet: 8,
+    bridgeDeckRiseFeet: 0.75,
+    bridgeRailings: true,
+    bridgeSupports: true,
+    bridgeSupportSpacingCells: 3,
+    bridgeSeed: "bridge-1",
+  });
+  const [editorBrushMode, setEditorBrushMode] = useState("terrain");
+  const [editorHeightStep, setEditorHeightStep] = useState(1);
+  const [editorFlattenHeight, setEditorFlattenHeight] = useState(0);
   const [selectedTerrainType, setSelectedTerrainType] = useState("grass");
+  const [waterPaintConfig, setWaterPaintConfig] = useState({
+    waterDepthFeet: 3,
+    waterCurrentStrength: "none",
+    waterCurrentDirection: "E",
+    waterBottomTerrain: "mud",
+    waterTemperatureF: 55,
+  });
   const [selectedWallTerrainType, setSelectedWallTerrainType] = useState("grass");
   const [editor3DBrushMode, setEditor3DBrushMode] = useState("top-terrain");
   const [brushRadius, setBrushRadius] = useState(0);
   const [selectedHex, setSelectedHex] = useState(null);
-  const [selectedPropType, setSelectedPropType] = useState(MAP_BUILDER_PROP_PALETTE[0].type);
+  const [selectedPropType, setSelectedPropType] = useState("tree");
   const [selectedPropId, setSelectedPropId] = useState(null);
   const [draggingPropId, setDraggingPropId] = useState(null);
   const [hoverHex, setHoverHex] = useState(null);
@@ -242,6 +282,11 @@ export default function MapMakerPage() {
   const [mapType, setMapType] = useState("hex"); // "hex" | "square"
   const [baseTerrain, setBaseTerrain] = useState("OPEN_GROUND"); // TerrainSystem key
   const [lighting, setLighting] = useState("BRIGHT_DAYLIGHT"); // LightingSystem key
+  const [environmentalFog, setEnvironmentalFog] = useState(BATTLEFIELD_FOG.CLEAR);
+  const [fogOfWarEnabled, setFogOfWarEnabled] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [libraryRevision, setLibraryRevision] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(() => (typeof window !== "undefined" ? Math.max(520, window.innerHeight - 190) : 700));
   const [gridWidth, setGridWidth] = useState(GRID_CONFIG?.GRID_WIDTH ?? 40);
   const [gridHeight, setGridHeight] = useState(GRID_CONFIG?.GRID_HEIGHT ?? 30);
 
@@ -253,6 +298,11 @@ export default function MapMakerPage() {
       mapType: "hex",
       terrain: "OPEN_GROUND",
       lighting: "BRIGHT_DAYLIGHT",
+      environment: {
+        lighting: "BRIGHT_DAYLIGHT",
+        environmentalFog: { type: BATTLEFIELD_FOG.CLEAR },
+        fogOfWar: { enabled: false, teamScoped: true, rememberExplored: true, rememberLastKnownEnemies: true },
+      },
       grid: createFilledGrid(width, height, "OPEN_GROUND"),
       mapSize: { width, height },
     };
@@ -262,9 +312,95 @@ export default function MapMakerPage() {
     mapDefinitionRef.current = mapDefinition;
   }, [mapDefinition]);
 
+  const createCurrentEditorSnapshot = useCallback((label = "edit") =>
+    createMapEditorSnapshot({
+      mapDefinition: mapDefinitionRef.current || mapDefinition,
+      mapProps,
+      selectedHex,
+      selectedPropId,
+      label,
+    }), [mapDefinition, mapProps, selectedHex, selectedPropId]);
+
+  const checkpointEditorHistory = useCallback((label = "edit") => {
+    const changed = checkpointMapEditorHistory(
+      editorHistoryRef.current,
+      createCurrentEditorSnapshot(label)
+    );
+    if (changed) setEditorHistoryRevision((value) => value + 1);
+    return changed;
+  }, [createCurrentEditorSnapshot]);
+
+  const restoreEditorSnapshot = useCallback((snapshot) => {
+    if (!snapshot?.mapDefinition) return false;
+    pending3DChangesRef.current = [];
+    if (rafFlushRef.current) {
+      cancelAnimationFrame(rafFlushRef.current);
+      rafFlushRef.current = null;
+    }
+    const nextDefinition = snapshot.mapDefinition;
+    const nextProps = Array.isArray(snapshot.mapProps) ? snapshot.mapProps : [];
+    mapDefinitionRef.current = nextDefinition;
+    setMapDefinition(nextDefinition);
+    setMapProps(nextProps);
+    setSelectedHex(snapshot.selectedHex || null);
+    setSelectedPropId(snapshot.selectedPropId || null);
+    setDraggingPropId(null);
+    setHoverHex(null);
+    setGrabbedObject(null);
+    setIsDirty(true);
+    requestAnimationFrame(() => {
+      arena3DRef.current?.syncMapEditorState?.(nextDefinition, null);
+    });
+    return true;
+  }, []);
+
+  const undoEditor = useCallback(() => {
+    const result = undoMapEditorHistory(
+      editorHistoryRef.current,
+      createCurrentEditorSnapshot("current")
+    );
+    if (!result.accepted) return false;
+    restoreEditorSnapshot(result.snapshot);
+    setEditorHistoryRevision((value) => value + 1);
+    toast({
+      title: "Undo",
+      description: result.label || "Map edit",
+      status: "info",
+      duration: 1000,
+      isClosable: true,
+    });
+    return true;
+  }, [createCurrentEditorSnapshot, restoreEditorSnapshot, toast]);
+
+  const redoEditor = useCallback(() => {
+    const result = redoMapEditorHistory(
+      editorHistoryRef.current,
+      createCurrentEditorSnapshot("current")
+    );
+    if (!result.accepted) return false;
+    restoreEditorSnapshot(result.snapshot);
+    setEditorHistoryRevision((value) => value + 1);
+    toast({
+      title: "Redo",
+      description: result.label || "Map edit",
+      status: "info",
+      duration: 1000,
+      isClosable: true,
+    });
+    return true;
+  }, [createCurrentEditorSnapshot, restoreEditorSnapshot, toast]);
+
+  const resetEditorHistory = useCallback(() => {
+    resetMapEditorHistory(editorHistoryRef.current);
+    setEditorHistoryRevision((value) => value + 1);
+  }, []);
+
   useEffect(() => {
-    console.log(`ðŸ–Œï¸ map brush radius: ${brushRadius}`);
-  }, [brushRadius]);
+    const updateViewportHeight = () => setViewportHeight(Math.max(520, window.innerHeight - 190));
+    window.addEventListener("resize", updateViewportHeight);
+    return () => window.removeEventListener("resize", updateViewportHeight);
+  }, []);
+
 
   useEffect(() => {
     setMapDefinition((prev) => ({
@@ -287,9 +423,62 @@ export default function MapMakerPage() {
       terrain: baseTerrain,
       lighting,
       description: mapName,
+      name: mapName,
       mapSize: { width: gridWidth, height: gridHeight },
+      size: { width: Number(gridWidth) || 40, height: Number(gridHeight) || 30 },
+      environment: {
+        ...(prev?.environment || {}),
+        lighting,
+        environmentalFog: {
+          ...(prev?.environment?.environmentalFog || {}),
+          type: environmentalFog,
+        },
+        fogOfWar: {
+          ...(prev?.environment?.fogOfWar || {}),
+          enabled: fogOfWarEnabled,
+          teamScoped: prev?.environment?.fogOfWar?.teamScoped !== false,
+          rememberExplored: prev?.environment?.fogOfWar?.rememberExplored !== false,
+          rememberLastKnownEnemies: prev?.environment?.fogOfWar?.rememberLastKnownEnemies !== false,
+        },
+      },
+      environmentalFog: { type: environmentalFog },
+      fogOfWarEnabled,
     }));
-  }, [mapName, mapType, baseTerrain, lighting, gridWidth, gridHeight]);
+  }, [mapName, mapType, baseTerrain, lighting, environmentalFog, fogOfWarEnabled, gridWidth, gridHeight]);
+
+  useEffect(() => {
+    if (editorBrushMode === "raise") setEditor3DBrushMode("height-raise");
+    else if (editorBrushMode === "lower") setEditor3DBrushMode("height-lower");
+    else if (editorBrushMode === "flatten") setEditor3DBrushMode("height-flatten");
+    else if (["height-raise", "height-lower", "height-flatten"].includes(editor3DBrushMode)) setEditor3DBrushMode("top-terrain");
+  }, [editorBrushMode, editor3DBrushMode]);
+
+  const editorInteraction = useMemo(
+    () => deriveMapEditorInteractionState({
+      activeTool: activeEditorTool,
+      editorBrushMode,
+      editor3DBrushMode,
+    }),
+    [activeEditorTool, editorBrushMode, editor3DBrushMode]
+  );
+
+  const handleActiveEditorToolChange = useCallback((nextTool) => {
+    setActiveEditorTool(nextTool);
+    if (nextTool === MAP_EDITOR_TOOLS.HEIGHT) {
+      setEditorBrushMode((current) => ["raise", "lower", "flatten"].includes(current) ? current : "raise");
+      setEditor3DBrushMode((current) => ["height-raise", "height-lower", "height-flatten"].includes(current) ? current : "height-raise");
+    } else if (nextTool === MAP_EDITOR_TOOLS.TERRAIN) {
+      setEditorBrushMode((current) => ["terrain", "bucket"].includes(current) ? current : "terrain");
+      setEditor3DBrushMode((current) => ["top-terrain", "wall-terrain"].includes(current) ? current : "top-terrain");
+    } else if (nextTool === MAP_EDITOR_TOOLS.STRUCTURE) {
+      setEditorBrushMode("select");
+      setEditor3DBrushMode("disabled");
+    }
+    painted3DBrushHexesRef.current.clear();
+    setDraggingPropId(null);
+    setHoverHex(null);
+    setGrabbedObject(null);
+  }, []);
 
   const queue3DCellChange = useCallback((col, row, cell) => {
     pending3DChangesRef.current.push({ col, row, cell });
@@ -339,6 +528,7 @@ export default function MapMakerPage() {
         return updated;
       });
       queue3DCellChange(x, y, nextCell);
+      setIsDirty(true);
     },
     [mapDefinition, queue3DCellChange]
   );
@@ -366,6 +556,7 @@ export default function MapMakerPage() {
         return updated;
       });
       queue3DCellChanges(mergedChanges);
+      setIsDirty(true);
     },
     [mapDefinition, queue3DCellChanges]
   );
@@ -376,10 +567,11 @@ export default function MapMakerPage() {
       return;
     }
 
-    const q = Number.isFinite(hex.q) ? hex.q : hex.x;
-    const r = Number.isFinite(hex.r) ? hex.r : hex.y;
-    setSelectedHex({ q, r });
-    console.log(`ðŸ§± map builder selected hex: (${q},${r})`);
+    const q = Number.isFinite(hex.x) ? hex.x : (Number.isFinite(hex.q) ? hex.q : null);
+    const r = Number.isFinite(hex.y) ? hex.y : (Number.isFinite(hex.r) ? hex.r : null);
+    if (!Number.isFinite(q) || !Number.isFinite(r)) return;
+    setSelectedHex({ q, r, x: q, y: r });
+    setSelectedPropId(null);
   }, []);
 
   const selectedHexCell = useMemo(() => {
@@ -395,8 +587,270 @@ export default function MapMakerPage() {
   }, [selectedHexCell]);
 
   const selectedHexTerrain = selectedHexCell?.terrainType || selectedHexCell?.terrain || selectedTerrainType || "grass";
-  const selectedHexTexture = selectedHexCell?.textureId || "none";
+
+  const selectedWaterEnvironment = useMemo(
+    () => selectedHexCell
+      ? getWaterEnvironmentFromCell(selectedHexCell)
+      : null,
+    [selectedHexCell]
+  );
+
+  const applySelectedSquareStructureEdge = useCallback(({ direction, edge = null, remove = false } = {}) => {
+    if (!selectedHex) {
+      toast({
+        title: "Select a cell first",
+        status: "info",
+        duration: 1800,
+        isClosable: true,
+      });
+      return { accepted: false, reason: "structure-cell-not-selected" };
+    }
+
+    const result = applyGridStructureEdgeEdit({
+      grid: mapDefinition?.grid || [],
+      mapType,
+      x: selectedHex.q,
+      y: selectedHex.r,
+      direction,
+      edge,
+      remove,
+    });
+
+    if (!result.accepted) {
+      toast({
+        title: "Structure edit rejected",
+        description: result.reason,
+        status: "warning",
+        duration: 2200,
+        isClosable: true,
+      });
+      return result;
+    }
+
+    checkpointEditorHistory(remove ? "remove structure edge" : "edit structure edge");
+    setMapDefinition((current) => ({
+      ...(current || {}),
+      grid: result.grid,
+      structureVersion: 1,
+    }));
+    queue3DCellChanges(result.changes);
+    setIsDirty(true);
+    return result;
+  }, [
+    mapDefinition?.grid,
+    mapType,
+    queue3DCellChanges,
+    selectedHex,
+    toast,
+  ]);
   const selectedHexWallTerrain = selectedHexCell?.wallTerrainType || "automatic";
+
+  const handleSquareStructureDragEnd = useCallback(({ start, end } = {}) => {
+    if (
+      activeEditorTool !== MAP_EDITOR_TOOLS.STRUCTURE ||
+      !start ||
+      !end
+    ) {
+      return { accepted: false, reason: "structure-drag-unavailable" };
+    }
+
+    const config = structureGeneratorConfig || {};
+    if (!["bridge", "wall-line"].includes(config.mode) && mapType !== "square") {
+      toast({
+        title: "Square structure tool",
+        description: "Room and premade-building generation use square maps. Precision walls, wall lines, and bridges work on hex or square maps.",
+        status: "info",
+        duration: 2200,
+        isClosable: true,
+      });
+      return { accepted: false, reason: "square-map-required" };
+    }
+
+    if (config.mode === "bridge") {
+      const bridgeResult = createBridgeOnMap({
+        mapDefinition,
+        start,
+        end,
+        material: config.bridgeMaterial || "wood",
+        widthFeet: Number(config.bridgeWidthFeet) || 8,
+        deckRiseFeet: Number(config.bridgeDeckRiseFeet) || 0,
+        railings: config.bridgeRailings !== false,
+        supports: config.bridgeSupports !== false,
+        supportSpacingCells: Number(config.bridgeSupportSpacingCells) || 3,
+        seed: config.bridgeSeed || "bridge-1",
+        name: "Bridge",
+      });
+      if (!bridgeResult.accepted) {
+        toast({
+          title: "Bridge generation rejected",
+          description: bridgeResult.reason || "Unable to generate bridge.",
+          status: "warning",
+          duration: 2200,
+          isClosable: true,
+        });
+        return bridgeResult;
+      }
+
+      checkpointEditorHistory("create bridge");
+      mapDefinitionRef.current = bridgeResult.mapDefinition;
+      setMapDefinition(bridgeResult.mapDefinition);
+      queue3DCellChanges(bridgeResult.changes || []);
+      setSelectedHex({
+        q: Number(end.x ?? end.q),
+        r: Number(end.y ?? end.r),
+        x: Number(end.x ?? end.q),
+        y: Number(end.y ?? end.r),
+      });
+      setIsDirty(true);
+      toast({
+        title: "Bridge created",
+        description: bridgeResult.bridge.material + " · " + bridgeResult.bridge.path.length + " cells · min clearance " + bridgeResult.minimumClearanceFeet.toFixed(1) + " ft",
+        status: "success",
+        duration: 1800,
+        isClosable: true,
+      });
+      return bridgeResult;
+    }
+    const wallEdge = {
+      kind: "wall",
+      material: config.material || "wood",
+      heightFeet: Number(config.heightFeet) || 10,
+      visual: {
+        assetUrl: config.assetUrl || null,
+        useProceduralFallback: true,
+      },
+    };
+
+    let result = null;
+    if (config.mode === "room") {
+      result = applySquareStructureRoom({
+        grid: mapDefinition?.grid || [],
+        start,
+        end,
+        edge: wallEdge,
+      });
+    } else if (config.mode === "wall-line") {
+      result = mapType === "hex"
+        ? applyOrthogonalHexStructureWallLine({
+            grid: mapDefinition?.grid || [],
+            structures: mapDefinition?.structures || {},
+            startCell: start,
+            endCell: end,
+            edge: wallEdge,
+            cornerMode: config.wallCornerMode || "horizontal-first",
+            step: config.wallLatticeStep || 1,
+          })
+        : applyGridStructureWallLine({
+            grid: mapDefinition?.grid || [],
+            mapType,
+            start,
+            end,
+            edge: wallEdge,
+            side: config.wallLineSide || "left",
+          });
+    } else if (config.mode === "building") {
+      result = generateSquareBuilding({
+        grid: mapDefinition?.grid || [],
+        start,
+        end,
+        seed: config.buildingSeed || "building-1",
+        template: config.buildingTemplate || "tavern",
+        material: config.material || "wood",
+        heightFeet: Number(config.heightFeet) || 10,
+        wealth: config.buildingWealth || "common",
+        windowStyle: config.buildingWindowStyle || "auto",
+        furnish: config.furnish !== false,
+        assetUrl: config.assetUrl || null,
+      });
+    } else {
+      return { accepted: false, reason: "precision-edge-mode" };
+    }
+
+    if (!result?.accepted) {
+      toast({
+        title: "Structure generation rejected",
+        description: result?.reason || "Unable to generate structure.",
+        status: "warning",
+        duration: 2200,
+        isClosable: true,
+      });
+      return result;
+    }
+
+    checkpointEditorHistory(
+      config.mode === "building"
+        ? "generate building"
+        : config.mode === "room"
+          ? "create room"
+          : "create wall line"
+    );
+    const nextDefinition = {
+      ...(mapDefinition || {}),
+      grid: result.grid,
+      structures: result.structures ?? mapDefinition?.structures ?? {},
+      structureVersion: 3,
+    };
+    mapDefinitionRef.current = nextDefinition;
+    setMapDefinition(nextDefinition);
+    queue3DCellChanges(result.changes || []);
+    setSelectedHex({
+      q: Number(end.x ?? end.q),
+      r: Number(end.y ?? end.r),
+      x: Number(end.x ?? end.q),
+      y: Number(end.y ?? end.r),
+    });
+
+    if (Array.isArray(result.propSuggestions) && result.propSuggestions.length > 0) {
+      setMapProps((current) => normalizeMapProps(
+        [...current, ...result.propSuggestions],
+        nextDefinition
+      ));
+    }
+
+    setIsDirty(true);
+    toast({
+      title:
+        config.mode === "building"
+          ? "Building generated"
+          : config.mode === "room"
+            ? "Room created"
+            : "Wall line created",
+      description:
+        config.mode === "building"
+          ? `${result.template} · seed ${result.seed} · ${result.appliedEdges || 0} structural edges`
+          : `${result.appliedEdges || 0} structural edges`,
+      status: "success",
+      duration: 1800,
+      isClosable: true,
+    });
+    return result;
+  }, [
+    activeEditorTool,
+    mapDefinition,
+    mapType,
+    queue3DCellChanges,
+    structureGeneratorConfig,
+    toast,
+  ]);
+
+  const deleteBridgeById = useCallback((bridgeId) => {
+    const result = deleteBridgeFromMap(mapDefinition, bridgeId);
+    if (!result.accepted) return false;
+    checkpointEditorHistory("delete bridge");
+    mapDefinitionRef.current = result.mapDefinition;
+    setMapDefinition(result.mapDefinition);
+    queue3DCellChanges(result.changes || []);
+    setIsDirty(true);
+    return true;
+  }, [checkpointEditorHistory, mapDefinition, queue3DCellChanges]);
+
+  const selectedHexEdgeTransitions = useMemo(() => {
+    if (!selectedHex) return [];
+    return getBattlefieldCellEdgeTransitions(mapDefinition, {
+      x: selectedHex.q,
+      y: selectedHex.r,
+    }).filter(Boolean);
+  }, [mapDefinition, selectedHex]);
 
   const updateSelectedHexCell = useCallback(
     (patch) => {
@@ -419,11 +873,12 @@ export default function MapMakerPage() {
                   : 0
             );
       if (requestedHeight !== null && Number.isFinite(requestedHeight) && requestedHeight !== nextHeight) {
-        console.log(`â›°ï¸ map height clamped: requested=${requestedHeight} clamped=${nextHeight}`);
+        console.log(`map height clamped: requested=${requestedHeight} clamped=${nextHeight}`);
       }
       const nextTerrain = patch.terrainType || prevCell.terrainType || prevCell.terrain || selectedTerrainType || "grass";
       const nextCell = {
         ...prevCell,
+        ...patch,
         terrain: nextTerrain,
         terrainType: nextTerrain,
         elevation: nextHeight,
@@ -436,6 +891,7 @@ export default function MapMakerPage() {
         nextCell.wallTextureId = patch.wallTextureId || undefined;
       }
 
+      checkpointEditorHistory("edit selected cell");
       setMapDefinition((prev) => {
         const updated = { ...(prev || {}) };
         const nextGrid = Array.isArray(updated.grid)
@@ -448,12 +904,52 @@ export default function MapMakerPage() {
       });
 
       queue3DCellChange(q, r, nextCell);
-      console.log(`â›°ï¸ map height updated: (${q},${r}) height=${nextHeight}`);
-      console.log(
-        `ðŸ§± map builder updated hex: (${q},${r}) height=${nextHeight} terrain=${nextTerrain} texture=${nextCell.textureId || "none"}`
-      );
+      setIsDirty(true);
     },
     [mapDefinition, queue3DCellChange, selectedHex, selectedTerrainType]
+  );
+
+  const applySelectedWaterEnvironment = useCallback(
+    (patch = waterPaintConfig) => {
+      if (!selectedHex || !selectedHexCell) {
+        return { accepted: false, reason: "water-cell-not-selected" };
+      }
+
+      const terrainKey = String(
+        selectedHexCell.terrainType ||
+        selectedHexCell.terrain ||
+        ""
+      ).toLowerCase();
+
+      if (terrainKey !== "water") {
+        toast({
+          title: "Select a water cell",
+          description: "Water environment settings apply to water terrain.",
+          status: "info",
+          duration: 1800,
+          isClosable: true,
+        });
+        return { accepted: false, reason: "selected-cell-not-water" };
+      }
+
+      const nextCell = applyWaterEnvironmentToCell(
+        selectedHexCell,
+        patch
+      );
+
+      updateSelectedHexCell(nextCell);
+      return {
+        accepted: true,
+        cell: nextCell,
+      };
+    },
+    [
+      selectedHex,
+      selectedHexCell,
+      toast,
+      updateSelectedHexCell,
+      waterPaintConfig,
+    ]
   );
 
   const apply3DBrushToHex = useCallback(
@@ -492,21 +988,33 @@ export default function MapMakerPage() {
           let nextCell = { ...prevCell };
 
           if (editor3DBrushMode === "top-terrain") {
-            if (nextCell.terrain === selectedTerrainType && nextCell.terrainType === selectedTerrainType) return;
+            if (
+              nextCell.terrain === selectedTerrainType &&
+              nextCell.terrainType === selectedTerrainType &&
+              selectedTerrainType !== "water"
+            ) return;
             nextCell = {
               ...nextCell,
               terrain: selectedTerrainType,
               terrainType: selectedTerrainType,
             };
+            if (selectedTerrainType === "water") {
+              nextCell = applyWaterEnvironmentToCell(
+                nextCell,
+                waterPaintConfig
+              );
+            }
           } else if (editor3DBrushMode === "wall-terrain") {
             if (nextCell.wallTerrainType === selectedWallTerrainType) return;
             nextCell = {
               ...nextCell,
               wallTerrainType: selectedWallTerrainType,
             };
-          } else if (editor3DBrushMode === "height-raise" || editor3DBrushMode === "height-lower") {
-            const delta = editor3DBrushMode === "height-raise" ? 1 : -1;
-            const nextHeight = clampHexHeight(currentHeight + delta);
+          } else if (["height-raise", "height-lower", "height-flatten"].includes(editor3DBrushMode)) {
+            const step = Number(editorHeightStep) || 1;
+            const nextHeight = editor3DBrushMode === "height-flatten"
+              ? clampHexHeight(editorFlattenHeight)
+              : clampHexHeight(currentHeight + (editor3DBrushMode === "height-raise" ? step : -step));
             if (nextHeight === currentHeight) return;
             nextCell = {
               ...nextCell,
@@ -531,35 +1039,31 @@ export default function MapMakerPage() {
         return updated;
       });
       if (changedCount > 0) {
-        if (editor3DBrushMode === "top-terrain") {
-          console.log(`ðŸ–Œï¸ terrain brush painted: center=(${centerX},${centerY}) radius=${brushRadius} count=${changedCount}`);
-        } else if (editor3DBrushMode === "wall-terrain") {
-          console.log(`ðŸ§± wall brush painted: center=(${centerX},${centerY}) radius=${brushRadius} count=${changedCount}`);
-        } else if (editor3DBrushMode === "height-raise" || editor3DBrushMode === "height-lower") {
-          console.log(`â›°ï¸ height brush painted: center=(${centerX},${centerY}) radius=${brushRadius} count=${changedCount}`);
-        }
+        setIsDirty(true);
       }
       return changed;
     },
     [
       brushRadius,
       editor3DBrushMode,
+      editorFlattenHeight,
+      editorHeightStep,
       gridHeight,
       gridWidth,
       queue3DCellChanges,
       selectedTerrainType,
       selectedWallTerrainType,
+      waterPaintConfig,
     ]
   );
 
   const begin3DBrushStroke = useCallback(
     (hex) => {
+      checkpointEditorHistory("3D brush stroke");
       painted3DBrushHexesRef.current.clear();
-      console.log(`ðŸ–Œï¸ map brush radius: ${brushRadius}`);
-      console.log(`ðŸ–Œï¸ 3D brush started: mode=${editor3DBrushMode}`);
       return apply3DBrushToHex(hex);
     },
-    [apply3DBrushToHex, brushRadius, editor3DBrushMode]
+    [apply3DBrushToHex, brushRadius, checkpointEditorHistory, editor3DBrushMode]
   );
 
   const update3DBrushStroke = useCallback(
@@ -569,7 +1073,6 @@ export default function MapMakerPage() {
 
   const end3DBrushStroke = useCallback(() => {
     painted3DBrushHexesRef.current.clear();
-    console.log("ðŸ–Œï¸ 3D brush ended");
   }, []);
 
   const isHexInBounds = useCallback(
@@ -602,12 +1105,12 @@ export default function MapMakerPage() {
 
   const handlePlaceSelectedProp = useCallback(() => {
     if (!selectedHex || !isHexInBounds(selectedHex)) return;
-    const template = MAP_BUILDER_PROP_PALETTE.find((prop) => prop.type === selectedPropType) || MAP_BUILDER_PROP_PALETTE[0];
+    const definition = getBattlefieldPropDefinition(selectedPropType);
     const axialHex = offsetToAxial(selectedHex.q, selectedHex.r);
-    if (template.blocksMovement && hasBlockingPropAtHex(axialHex)) {
+    if (definition.blocksMovement && hasBlockingPropAtHex(axialHex)) {
       toast({
         title: "Hex already blocked",
-        description: "Move the existing blocking prop before placing another one there.",
+        description: "Move the existing blocking prop before placing another blocking object there.",
         status: "warning",
         duration: 1800,
         isClosable: true,
@@ -616,27 +1119,23 @@ export default function MapMakerPage() {
     }
 
     const id = `map-prop-${Date.now()}`;
-    const nextProp = {
-      id,
-      type: template.type,
-      name: template.name,
-      modelUrl: template.modelUrl,
+    const nextProp = createBattlefieldProp(selectedPropType, {
       q: axialHex.q,
       r: axialHex.r,
-      rotation: template.rotation,
-      scale: template.scale,
-      blocksMovement: template.blocksMovement,
-      blocksLineOfSight: template.blocksLineOfSight,
-    };
+      x: selectedHex.q,
+      y: selectedHex.r,
+      coordinateSpace: "axial",
+    }, { id });
+    checkpointEditorHistory("place prop");
     setMapProps((prev) => [...prev, nextProp]);
     setSelectedPropId(id);
+    setIsDirty(true);
   }, [hasBlockingPropAtHex, isHexInBounds, selectedHex, selectedPropType, toast]);
 
   const beginPropGrab = useCallback(({ grabbedObject: nextGrabbedObject, prop }) => {
     setSelectedPropId(prop?.id || nextGrabbedObject?.id || null);
     setDraggingPropId(prop?.id || nextGrabbedObject?.id || null);
     setGrabbedObject(nextGrabbedObject || null);
-    console.log(`ðŸ§© map prop grabbed: ${prop?.name || "Prop"}`);
   }, []);
 
   const updatePropGrabHover = useCallback(({ hoverHex: nextHoverHex, grabbedObject: nextGrabbedObject }) => {
@@ -660,84 +1159,112 @@ export default function MapMakerPage() {
         return false;
       }
 
+      const offset = axialToOffset(dropHex.q, dropHex.r);
+      checkpointEditorHistory("move prop");
       setMapProps((prev) => prev.map((item) => (
         item.id === prop.id
-          ? { ...item, q: dropHex.q, r: dropHex.r }
+          ? { ...item, q: dropHex.q, r: dropHex.r, x: offset.col, y: offset.row, coordinateSpace: "axial" }
           : item
       )));
       setSelectedPropId(prop.id);
       setDraggingPropId(null);
       setHoverHex(null);
       setGrabbedObject(null);
-      console.log(`ðŸ§© map prop drostaminad: ${prop.name || "Prop"} at (${dropHex.q},${dropHex.r})`);
+      setIsDirty(true);
       return true;
     },
     [hasBlockingPropAtHex, isHexInBounds]
   );
 
-  const heightTiles = useMemo(() => {
-    const out = [];
-    const grid = mapDefinition?.grid;
-    if (!Array.isArray(grid)) return out;
-    for (let y = 0; y < grid.length; y++) {
-      const row = grid[y];
-      if (!Array.isArray(row)) continue;
-      for (let x = 0; x < row.length; x++) {
-        const cell = row[x] || {};
-        const elev = Number.isFinite(cell.elevation)
-          ? cell.elevation
-          : Number.isFinite(cell.height)
-          ? cell.height
-          : 0;
-        if (elev !== 0) {
-          out.push({ x, y, elevation: elev, terrainType: cell.terrainType || cell.terrain });
-        }
-      }
-    }
-    return out.sort((a, b) => (a.y - b.y) || (a.x - b.x));
-  }, [mapDefinition]);
 
-  const savedMaps = useMemo(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const parsed = safeJsonParse(raw, []);
-    return Array.isArray(parsed) ? parsed : [];
-  }, []);
-  const [selectedSavedId, setSelectedSavedId] = useState("");
   const [importExportJson, setImportExportJson] = useState("");
 
-  const persistSavedMaps = useCallback((maps) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(maps));
-  }, []);
-
   const buildExportMap = useCallback(() => {
-    const size = getMapSizeFromDefinition(mapDefinition, Number(gridWidth) || 40, Number(gridHeight) || 30);
-    const props = normalizeMapProps(mapProps);
-    const grid = normalizeGridHeights(
-      Array.isArray(mapDefinition?.grid) ? mapDefinition.grid : createFilledGrid(size.width, size.height, baseTerrain)
+    const size = getMapSizeFromDefinition(
+      mapDefinition,
+      Number(gridWidth) || 40,
+      Number(gridHeight) || 30,
     );
-    return {
-      id: mapDefinition?.id || `map-${Date.now()}`,
-      name: mapName || mapDefinition?.name || mapDefinition?.description || "Untitled Map",
-      version: Number(mapDefinition?.version) || 1,
-      description: mapName || mapDefinition?.description || "Untitled Map",
-      mapType: mapType || mapDefinition?.mapType || "hex",
-      terrain: baseTerrain || mapDefinition?.terrain || "OPEN_GROUND",
-      lighting: mapDefinition?.lighting || lighting,
-      size,
-      mapSize: { width: size.width, height: size.height },
+    const grid = normalizeGridHeights(
+      Array.isArray(mapDefinition?.grid)
+        ? mapDefinition.grid
+        : createFilledGrid(size.width, size.height, baseTerrain),
+    );
+    const mapForPropNormalization = {
+      ...(mapDefinition || {}),
       width: size.width,
       height: size.height,
+      size,
+      mapSize: { width: size.width, height: size.height },
       grid,
-      hexes: gridToSavedHexes(grid),
-      props,
-      spawnZones: Array.isArray(mapDefinition?.spawnZones) ? mapDefinition.spawnZones : [],
-      theme: mapDefinition?.theme || {
-        id: mapDefinition?.themeId || "map_builder_default",
-        defaultTextureId: mapDefinition?.defaultTextureId || null,
-      },
-      cameraDefaults: mapDefinition?.cameraDefaults || null,
     };
-  }, [baseTerrain, gridHeight, gridWidth, lighting, mapDefinition, mapName, mapProps, mapType]);
+    const props = normalizeMapProps(mapProps, mapForPropNormalization);
+    const existingEnvironment = mapDefinition?.environment || {};
+    const existingFogOfWar = existingEnvironment.fogOfWar || mapDefinition?.fogOfWar || {};
+    const existingEnvironmentalFog =
+      existingEnvironment.environmentalFog || mapDefinition?.environmentalFog || {};
+    const source = mapDefinition?.source || BATTLEFIELD_MAP_SOURCES.SAVED;
+
+    return normalizeBattlefieldMap(
+      {
+        ...(mapDefinition || {}),
+        id: mapDefinition?.id || `battlefield-${Date.now()}`,
+        name: mapName || mapDefinition?.name || mapDefinition?.description || "Untitled Map",
+        description: mapName || mapDefinition?.description || "Untitled Map",
+        source,
+        version: Number(mapDefinition?.version) || 1,
+        mapType: mapType || mapDefinition?.mapType || "hex",
+        baseTerrain: baseTerrain || mapDefinition?.baseTerrain || mapDefinition?.terrain || "grass",
+        terrain: baseTerrain || mapDefinition?.terrain || "grass",
+        lighting,
+        size,
+        mapSize: { width: size.width, height: size.height },
+        width: size.width,
+        height: size.height,
+        grid,
+        hexes: gridToSavedHexes(grid),
+        props,
+        spawnZones: Array.isArray(mapDefinition?.spawnZones) ? mapDefinition.spawnZones : [],
+        environment: {
+          ...existingEnvironment,
+          lighting,
+          environmentalFog: {
+            ...existingEnvironmentalFog,
+            type: environmentalFog,
+          },
+          fogOfWar: {
+            ...existingFogOfWar,
+            enabled: fogOfWarEnabled,
+            teamScoped: existingFogOfWar.teamScoped !== false,
+            rememberExplored: existingFogOfWar.rememberExplored !== false,
+            rememberLastKnownEnemies: existingFogOfWar.rememberLastKnownEnemies !== false,
+          },
+        },
+        environmentalFog: {
+          ...existingEnvironmentalFog,
+          type: environmentalFog,
+        },
+        fogOfWarEnabled,
+        theme: mapDefinition?.theme || {
+          id: mapDefinition?.themeId || "map_builder_default",
+          defaultTextureId: mapDefinition?.defaultTextureId || null,
+        },
+        cameraDefaults: mapDefinition?.cameraDefaults || null,
+      },
+      { source },
+    );
+  }, [
+    baseTerrain,
+    environmentalFog,
+    fogOfWarEnabled,
+    gridHeight,
+    gridWidth,
+    lighting,
+    mapDefinition,
+    mapName,
+    mapProps,
+    mapType,
+  ]);
 
   const validateImportedMap = useCallback((parsed) => {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -748,8 +1275,17 @@ export default function MapMakerPage() {
     if (!hasGrid && !hasHexes) {
       return { ok: false, reason: "missing grid or hexes" };
     }
-    const size = getMapSizeFromDefinition(parsed, GRID_CONFIG.GRID_WIDTH, GRID_CONFIG.GRID_HEIGHT);
-    if (!Number.isFinite(size.width) || !Number.isFinite(size.height) || size.width <= 0 || size.height <= 0) {
+    const size = getMapSizeFromDefinition(
+      parsed,
+      GRID_CONFIG.GRID_WIDTH,
+      GRID_CONFIG.GRID_HEIGHT,
+    );
+    if (
+      !Number.isFinite(size.width) ||
+      !Number.isFinite(size.height) ||
+      size.width <= 0 ||
+      size.height <= 0
+    ) {
       return { ok: false, reason: "invalid map size" };
     }
     if (hasGrid && !parsed.grid.every((row) => Array.isArray(row))) {
@@ -780,43 +1316,6 @@ export default function MapMakerPage() {
     });
   }, []);
 
-  const handleSave = useCallback(() => {
-    const id = `${Date.now()}`;
-    const exportMap = buildExportMap();
-    const entry = {
-      id,
-      name: mapName || "Untitled Map",
-      savedAt: new Date().toISOString(),
-      mapDefinition: exportMap,
-    };
-    const next = [entry, ...savedMaps];
-    persistSavedMaps(next);
-    setSelectedSavedId(id);
-    toast({ title: "Map saved", status: "success", duration: 1600, isClosable: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buildExportMap, mapName, persistSavedMaps, toast]);
-
-  const handleLoad = useCallback(() => {
-    const entry = savedMaps.find((m) => m.id === selectedSavedId);
-    if (!entry?.mapDefinition) return;
-
-    const def = entry.mapDefinition;
-    setMapName(entry.name || def.description || "Loaded Map");
-    setMapType(def.mapType || "hex");
-    setBaseTerrain(def.terrain || "OPEN_GROUND");
-    setLighting(def.lighting || "BRIGHT_DAYLIGHT");
-
-    const width = def.mapSize?.width ?? def.width ?? GRID_CONFIG.GRID_WIDTH;
-    const height = def.mapSize?.height ?? def.height ?? GRID_CONFIG.GRID_HEIGHT;
-    setGridWidth(width);
-    setGridHeight(height);
-
-    setMapDefinition(def);
-    setMapProps(normalizeMapProps(def.props));
-    clearTransientEditorState({ width, height });
-    toast({ title: "Map loaded", status: "info", duration: 1400, isClosable: true });
-  }, [clearTransientEditorState, savedMaps, selectedSavedId, toast]);
-
   const handleResizeGrid = useCallback(() => {
     const nextW = Math.max(5, Math.min(200, Number(gridWidth) || 40));
     const nextH = Math.max(5, Math.min(200, Number(gridHeight) || 30));
@@ -841,6 +1340,7 @@ export default function MapMakerPage() {
       });
     }
 
+    setIsDirty(true);
     toast({ title: "Grid resized", status: "success", duration: 1200, isClosable: true });
   }, [baseTerrain, gridHeight, gridWidth, toast]);
 
@@ -848,15 +1348,14 @@ export default function MapMakerPage() {
     const exportMap = buildExportMap();
     const json = JSON.stringify(exportMap, null, 2);
     setImportExportJson(json);
-    console.log(`ðŸ—ºï¸ map builder exported: ${exportMap.name} props=${exportMap.props.length}`);
     toast({ title: "Map exported", description: "JSON placed in the text box.", status: "info", duration: 1600, isClosable: true });
   }, [buildExportMap, toast]);
 
   const handleImport = useCallback(() => {
+    resetEditorHistory();
     const parsed = safeJsonParse(importExportJson, null);
     const validation = validateImportedMap(parsed);
     if (!validation.ok) {
-      console.warn(`ðŸš« map builder import failed: ${validation.reason}`);
       toast({ title: "Invalid map JSON", description: validation.reason, status: "error", duration: 2200, isClosable: true });
       return;
     }
@@ -868,7 +1367,7 @@ export default function MapMakerPage() {
         ? parsed.grid
         : hexesToGrid(parsed.hexes, width, height, parsed.terrain || "OPEN_GROUND")
     );
-    const nextProps = normalizeMapProps(parsed.props);
+    const nextProps = normalizeMapProps(parsed.props, parsed);
     const nextName = parsed.name || parsed.description || "Imported Map";
     const lightingValue =
       typeof parsed.lighting === "string"
@@ -900,351 +1399,531 @@ export default function MapMakerPage() {
     setMapType(parsed.mapType || "hex");
     setBaseTerrain(nextDefinition.terrain || "OPEN_GROUND");
     setLighting(lightingValue);
+    setEnvironmentalFog(parsed.environment?.environmentalFog?.type || parsed.environmentalFog?.type || BATTLEFIELD_FOG.CLEAR);
+    setFogOfWarEnabled(parsed.environment?.fogOfWar?.enabled === true || parsed.fogOfWarEnabled === true);
     setGridWidth(width);
     setGridHeight(height);
 
-    console.log(`ðŸ—ºï¸ map builder imported: ${nextName} props=${nextProps.length}`);
+    setIsDirty(true);
     toast({ title: "Map imported", description: `${nextProps.length} props restored.`, status: "success", duration: 1800, isClosable: true });
   }, [clearTransientEditorState, importExportJson, toast, validateImportedMap]);
 
-  return (
-    <Box p={4}>
-      <VStack align="stretch" spacing={4}>
-        <HStack justify="space-between" wrap="wrap">
-          <VStack align="start" spacing={0}>
-            <Text fontSize="xl" fontWeight="bold">ðŸ—ºï¸ Map Maker</Text>
-            <Text fontSize="sm" color="gray.600">Same editor pipeline as Combat Arena (2D paint + optional 3D preview).</Text>
-          </VStack>
-          <HStack>
-            <Button size="sm" colorScheme={show3DView ? "purple" : "gray"} variant={show3DView ? "solid" : "outline"} onClick={() => setShow3DView((v) => !v)}>
-              {show3DView ? "ðŸŽ® Hide 3D" : "ðŸŽ® Show 3D"}
-            </Button>
-            <Button size="sm" colorScheme="blue" onClick={handleSave}>ðŸ’¾ Save</Button>
-          </HStack>
-        </HStack>
 
-        <Divider />
+  const handleOpenBattlefieldMap = useCallback((incomingMap) => {
+    resetEditorHistory();
+    if (!incomingMap) return;
+    const normalized = normalizeBattlefieldMap(incomingMap);
+    const width = normalized.width || normalized.mapSize?.width || 40;
+    const height = normalized.height || normalized.mapSize?.height || 30;
+    const editorProps = normalizeMapProps(normalized.props, normalized);
+    const editorDefinition = {
+      ...normalized,
+      props: editorProps,
+      grid: normalizeGridHeights(normalized.grid),
+    };
 
-        <HStack align="start" spacing={4} wrap="wrap">
-          <Box flex="1" minW="320px">
-            <VStack align="stretch" spacing={3}>
-              <FormControl>
-                <FormLabel fontSize="sm">Map Name</FormLabel>
-                <Input value={mapName} onChange={(e) => setMapName(e.target.value)} />
-              </FormControl>
+    setMapDefinition(editorDefinition);
+    setMapProps(editorProps);
+    setMapName(normalized.name || "Untitled Map");
+    setMapType(normalized.mapType || "hex");
+    setBaseTerrain(normalized.baseTerrain || normalized.terrain || "grass");
+    setLighting(normalized.environment?.lighting || normalized.lighting || "BRIGHT_DAYLIGHT");
+    setEnvironmentalFog(normalized.environment?.environmentalFog?.type || BATTLEFIELD_FOG.CLEAR);
+    setFogOfWarEnabled(normalized.environment?.fogOfWar?.enabled === true);
+    setGridWidth(width);
+    setGridHeight(height);
+    setSelectedTerrainType(normalized.baseTerrain || "grass");
+    clearTransientEditorState({ width, height });
+    setIsDirty(normalized.source === BATTLEFIELD_MAP_SOURCES.GENERATED || normalized.source === BATTLEFIELD_MAP_SOURCES.IMPORTED);
+  }, [clearTransientEditorState]);
 
-              <HStack spacing={3} wrap="wrap">
-                <FormControl>
-                  <FormLabel fontSize="sm">Grid</FormLabel>
-                  <HStack>
-                    <Input type="number" value={gridWidth} onChange={(e) => setGridWidth(e.target.value)} />
-                    <Text>Ã—</Text>
-                    <Input type="number" value={gridHeight} onChange={(e) => setGridHeight(e.target.value)} />
-                    <Button size="sm" onClick={handleResizeGrid}>Apply</Button>
-                  </HStack>
-                </FormControl>
-              </HStack>
+  const handleNewMap = useCallback(() => {
+    resetEditorHistory();
+    const width = 40;
+    const height = 30;
+    const blank = normalizeBattlefieldMap({
+      id: `battlefield-${Date.now()}`,
+      name: "Untitled Map",
+      source: BATTLEFIELD_MAP_SOURCES.SAVED,
+      mapType: "hex",
+      baseTerrain: "grass",
+      terrain: "grass",
+      width,
+      height,
+      mapSize: { width, height },
+      grid: createFilledGrid(width, height, "grass"),
+      props: [],
+      environment: {
+        lighting: "BRIGHT_DAYLIGHT",
+        environmentalFog: { type: BATTLEFIELD_FOG.CLEAR },
+        fogOfWar: { enabled: false, teamScoped: true, rememberExplored: true, rememberLastKnownEnemies: true },
+      },
+    });
+    handleOpenBattlefieldMap(blank);
+    setIsDirty(true);
+  }, [handleOpenBattlefieldMap]);
 
-              <HStack spacing={3} wrap="wrap">
-                <FormControl>
-                  <FormLabel fontSize="sm">Map Type</FormLabel>
-                  <Select value={mapType} onChange={(e) => setMapType(e.target.value)}>
-                    <option value="hex">â¬¡ Hex</option>
-                    <option value="square">â¬› Square</option>
-                  </Select>
-                </FormControl>
-                <FormControl>
-                  <FormLabel fontSize="sm">Base Terrain</FormLabel>
-                  <Select value={baseTerrain} onChange={(e) => setBaseTerrain(e.target.value)}>
-                    {Object.entries(TERRAIN_TYPES).map(([key, data]) => (
-                      <option key={key} value={key}>{data.name}</option>
-                    ))}
-                  </Select>
-                </FormControl>
-                <FormControl>
-                  <FormLabel fontSize="sm">Lighting</FormLabel>
-                  <Select value={lighting} onChange={(e) => setLighting(e.target.value)}>
-                    {Object.entries(LIGHTING_CONDITIONS).map(([key, data]) => (
-                      <option key={key} value={key}>{data.name}</option>
-                    ))}
-                  </Select>
-                </FormControl>
-              </HStack>
+  const handleSaveToLibrary = useCallback(() => {
+    const current = buildExportMap();
+    const saved = {
+      ...current,
+      name: mapName || current.name,
+    };
+    const result = saveBattlefieldMapToLibrary(saved);
+    if (result?.entry?.mapDefinition) {
+      const editorProps = normalizeMapProps(result.entry.mapDefinition.props, result.entry.mapDefinition);
+      setMapDefinition({ ...result.entry.mapDefinition, props: editorProps });
+      setMapProps(editorProps);
+      setMapName(result.entry.mapDefinition.name || mapName || "Untitled Map");
+    }
+    setLibraryRevision((value) => value + 1);
+    setIsDirty(false);
+    toast({ title: "Battlefield saved", description: "Added to the battlefield map library.", status: "success", duration: 1500, isClosable: true });
+  }, [buildExportMap, mapName, toast]);
 
-              <Divider />
+  const handleTestBattle = useCallback(() => {
+    launchBattlefieldTestBattle(buildExportMap());
+  }, [buildExportMap]);
 
-              <Box borderWidth="1px" borderRadius="md" p={3} bg="gray.50">
-                <VStack align="stretch" spacing={3}>
-                  <Text fontSize="sm" fontWeight="bold">
-                    {selectedHex
-                      ? `Selected hex: ${selectedHex.q}, ${selectedHex.r}`
-                      : "No hex selected"}
-                  </Text>
-                  {selectedHex && (
-                    <>
-                      <HStack spacing={3} align="end" wrap="wrap">
-                        <FormControl>
-                          <FormLabel fontSize="sm">Height</FormLabel>
-                          <HStack>
-                            <Button
-                              size="sm"
-                              onClick={() => updateSelectedHexCell({ height: selectedHexHeight - 1 })}
-                              isDisabled={selectedHexHeight <= MAP_MIN_HEIGHT}
-                            >
-                              -
-                            </Button>
-                            <Input
-                              type="number"
-                              min={MAP_MIN_HEIGHT}
-                              max={MAP_MAX_HEIGHT}
-                              value={selectedHexHeight}
-                              onChange={(e) => updateSelectedHexCell({ height: e.target.value })}
-                            />
-                            <Button
-                              size="sm"
-                              onClick={() => updateSelectedHexCell({ height: selectedHexHeight + 1 })}
-                              isDisabled={selectedHexHeight >= MAP_MAX_HEIGHT}
-                            >
-                              +
-                            </Button>
-                          </HStack>
-                        </FormControl>
-                      </HStack>
+  const selectedProp = useMemo(
+    () => mapProps.find((prop) => String(prop.id) === String(selectedPropId)) || null,
+    [mapProps, selectedPropId],
+  );
 
-                      <FormControl>
-                        <FormLabel fontSize="sm">Terrain</FormLabel>
-                        <Select
-                          value={selectedHexTerrain}
-                          onChange={(e) => updateSelectedHexCell({ terrainType: e.target.value })}
-                        >
-                          {MAP_BUILDER_TERRAIN_OPTIONS.map((terrain) => (
-                            <option key={terrain.key} value={terrain.key}>
-                              {terrain.label}
-                            </option>
-                          ))}
-                        </Select>
-                      </FormControl>
+  const updateSelectedProp = useCallback((patch) => {
+    if (!selectedPropId) return;
+    checkpointEditorHistory("edit prop");
+    setMapProps((prev) => prev.map((prop) => (
+      String(prop.id) === String(selectedPropId)
+        ? normalizeBattlefieldProp({ ...prop, ...patch, id: prop.id })
+        : prop
+    )));
+    setIsDirty(true);
+  }, [checkpointEditorHistory, selectedPropId]);
 
-                      <Text fontSize="xs" color="gray.600">
-                        Texture/style: {selectedHexTexture === "none" ? "terrain material" : selectedHexTexture}
-                      </Text>
-                      <Text fontSize="xs" color="gray.600">
-                        Wall texture: {selectedHexWallTerrain}
-                      </Text>
-                    </>
-                  )}
-                </VStack>
-              </Box>
+  const rotateSelectedProp = useCallback((delta) => {
+    if (!selectedProp) return;
+    const next = ((Number(selectedProp.rotation) || 0) + Number(delta || 0)) % 360;
+    updateSelectedProp({ rotation: next < 0 ? next + 360 : next });
+  }, [selectedProp, updateSelectedProp]);
 
-              <Divider />
+  const scaleSelectedProp = useCallback((delta) => {
+    if (!selectedProp) return;
+    const next = Math.max(0.25, Math.min(4, (Number(selectedProp.scale) || 1) + Number(delta || 0)));
+    updateSelectedProp({ scale: Number(next.toFixed(2)) });
+  }, [selectedProp, updateSelectedProp]);
 
-              <Box borderWidth="1px" borderRadius="md" p={3} bg="gray.50">
-                <VStack align="stretch" spacing={3}>
-                  <Text fontSize="sm" fontWeight="bold">3D Brush</Text>
-                  <FormControl>
-                    <FormLabel fontSize="sm">Brush Mode</FormLabel>
-                    <Select value={editor3DBrushMode} onChange={(e) => setEditor3DBrushMode(e.target.value)}>
-                      {MAP_BUILDER_3D_BRUSH_MODES.map((mode) => (
-                        <option key={mode.key} value={mode.key}>
-                          {mode.label}
-                        </option>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel fontSize="sm">Brush Radius</FormLabel>
-                    <Select value={brushRadius} onChange={(e) => setBrushRadius(Number(e.target.value) || 0)}>
-                      {[0, 1, 2, 3].map((radius) => (
-                        <option key={radius} value={radius}>
-                          {radius}
-                        </option>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel fontSize="sm">Top Terrain</FormLabel>
-                    <Select value={selectedTerrainType} onChange={(e) => setSelectedTerrainType(e.target.value)}>
-                      {MAP_BUILDER_TERRAIN_OPTIONS.map((terrain) => (
-                        <option key={terrain.key} value={terrain.key}>
-                          {terrain.label}
-                        </option>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel fontSize="sm">Wall Terrain</FormLabel>
-                    <Select value={selectedWallTerrainType} onChange={(e) => setSelectedWallTerrainType(e.target.value)}>
-                      {MAP_BUILDER_TERRAIN_OPTIONS.map((terrain) => (
-                        <option key={terrain.key} value={terrain.key}>
-                          {terrain.label}
-                        </option>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  <Text fontSize="xs" color="gray.600">
-                    Radius {brushRadius} paints {brushRadius === 0 ? "one hex" : "a hex area"}.
-                  </Text>
-                </VStack>
-              </Box>
+  const deleteSelectedProp = useCallback(() => {
+    if (!selectedPropId) return;
+    checkpointEditorHistory("delete prop");
+    setMapProps((prev) => prev.filter((prop) => String(prop.id) !== String(selectedPropId)));
+    setSelectedPropId(null);
+    setIsDirty(true);
+  }, [checkpointEditorHistory, selectedPropId]);
 
-              <Divider />
+  const deleteSelectedSquareStructures = useCallback(() => {
+    if (!selectedHex) return false;
 
-              <Box borderWidth="1px" borderRadius="md" p={3} bg="gray.50">
-                <VStack align="stretch" spacing={3}>
-                  <Text fontSize="sm" fontWeight="bold">Props</Text>
-                  <FormControl>
-                    <FormLabel fontSize="sm">Prop Palette</FormLabel>
-                    <Select value={selectedPropType} onChange={(e) => setSelectedPropType(e.target.value)}>
-                      {MAP_BUILDER_PROP_PALETTE.map((prop) => (
-                        <option key={prop.type} value={prop.type}>
-                          {prop.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  <Button
-                    size="sm"
-                    colorScheme="purple"
-                    onClick={handlePlaceSelectedProp}
-                    isDisabled={!selectedHex}
-                  >
-                    Place Prop
-                  </Button>
-                  <Text fontSize="xs" color="gray.600">
-                    {selectedPropId
-                      ? `Selected prop: ${mapProps.find((prop) => prop.id === selectedPropId)?.name || selectedPropId}`
-                      : "No prop selected"}
-                  </Text>
-                  <Text fontSize="xs" color="gray.600">
-                    {draggingPropId
-                      ? `Dragging over: ${hoverHex ? `${hoverHex.q}, ${hoverHex.r}` : "outside map"}`
-                      : `Placed props: ${mapProps.length}`}
-                  </Text>
-                </VStack>
-              </Box>
+    const edgeResult = deleteGridCellStructures({
+      grid: mapDefinition?.grid || [],
+      mapType,
+      x: selectedHex.q,
+      y: selectedHex.r,
+    });
+    const orthogonalResult = removeOrthogonalStructureRunsOwnedByCell({
+      grid: edgeResult.accepted ? edgeResult.grid : (mapDefinition?.grid || []),
+      structures: mapDefinition?.structures || {},
+      x: selectedHex.q,
+      y: selectedHex.r,
+    });
+    if (!edgeResult.accepted && !orthogonalResult.accepted) return false;
 
-              <Divider />
+    const nextGrid = orthogonalResult.accepted
+      ? orthogonalResult.grid
+      : edgeResult.grid;
+    const nextStructures = orthogonalResult.accepted
+      ? orthogonalResult.structures
+      : (mapDefinition?.structures || {});
+    const changes = [
+      ...(edgeResult.accepted ? (edgeResult.changes || []) : []),
+      ...(orthogonalResult.accepted ? (orthogonalResult.changes || []) : []),
+    ];
+    const byCell = new Map();
+    changes.forEach((change) => byCell.set(change.x + "," + change.y, change));
 
-              <FormControl>
-                <FormLabel fontSize="sm">Saved Maps</FormLabel>
-                <HStack>
-                  <Select value={selectedSavedId} onChange={(e) => setSelectedSavedId(e.target.value)} placeholder="Select saved map">
-                    {savedMaps.map((m) => (
-                      <option key={m.id} value={m.id}>{m.name} ({new Date(m.savedAt).toLocaleString()})</option>
-                    ))}
-                  </Select>
-                  <Button size="sm" onClick={handleLoad} isDisabled={!selectedSavedId}>Load</Button>
-                </HStack>
-              </FormControl>
+    checkpointEditorHistory("delete selected structure edges/runs");
+    setMapDefinition((current) => ({
+      ...(current || {}),
+      grid: nextGrid,
+      structures: nextStructures,
+      structureVersion: 3,
+    }));
+    queue3DCellChanges([...byCell.values()]);
+    setIsDirty(true);
+    return true;
+  }, [
+    checkpointEditorHistory,
+    mapDefinition?.grid,
+    mapDefinition?.structures,
+    mapType,
+    queue3DCellChanges,
+    selectedHex,
+  ]);
 
-              <Divider />
+  const deleteSelectedEditorItem = useCallback(() => {
+    if (selectedPropId) {
+      deleteSelectedProp();
+      return true;
+    }
+    if (activeEditorTool === MAP_EDITOR_TOOLS.STRUCTURE) {
+      return deleteSelectedSquareStructures();
+    }
+    return false;
+  }, [
+    activeEditorTool,
+    deleteSelectedProp,
+    deleteSelectedSquareStructures,
+    selectedPropId,
+  ]);
 
-              <Box>
-                <HStack justify="space-between" align="center" mb={2}>
-                  <Text fontSize="sm" fontWeight="bold">â›°ï¸ Height Tiles</Text>
-                  <Text fontSize="xs" color="gray.600">
-                    {heightTiles.length} non-flat
-                  </Text>
-                </HStack>
-                <Box
-                  borderWidth="1px"
-                  borderRadius="md"
-                  p={2}
-                  maxH="160px"
-                  overflowY="auto"
-                  fontFamily="mono"
-                  fontSize="xs"
-                  bg="gray.50"
-                >
-                  {heightTiles.length === 0 ? (
-                    <Text fontSize="xs" color="gray.600" fontFamily="system-ui">
-                      No raised/lowered tiles yet.
-                    </Text>
-                  ) : (
-                    heightTiles.map((t) => (
-                      <Box key={`${t.x},${t.y}`}>
-                        ({t.x},{t.y}) elev={t.elevation}{t.terrainType ? ` terrain=${t.terrainType}` : ""}
-                      </Box>
-                    ))
-                  )}
-                </Box>
-              </Box>
+  const mapSummary = useMemo(() => ({
+    name: mapName,
+    width: Number(gridWidth) || 0,
+    height: Number(gridHeight) || 0,
+    mapType,
+    lighting: LIGHTING_LABELS[lighting] || lighting,
+    fog: FOG_LABELS[environmentalFog] || environmentalFog,
+    propCount: mapProps.length,
+  }), [environmentalFog, gridHeight, gridWidth, lighting, mapName, mapProps.length, mapType]);
 
-              <Divider />
+  const editorHistoryState = useMemo(
+    () => getMapEditorHistoryState(editorHistoryRef.current),
+    [editorHistoryRevision]
+  );
 
-              <HStack>
-                <Button size="sm" variant="outline" onClick={handleExport}>Export Map JSON</Button>
-                <Button size="sm" colorScheme="green" variant="outline" onClick={handleImport} isDisabled={!importExportJson.trim()}>
-                  Import Map JSON
-                </Button>
-              </HStack>
-              <Textarea
-                value={importExportJson}
-                onChange={(e) => setImportExportJson(e.target.value)}
-                rows={8}
-                placeholder="Paste exported map JSON here to import."
-                fontFamily="mono"
-                fontSize="sm"
-              />
-            </VStack>
-          </Box>
+  useEffect(() => {
+    const handleEditorKeyDown = (event) => {
+      const target = event.target;
+      const tag = String(target?.tagName || "").toLowerCase();
+      if (
+        target?.isContentEditable ||
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select"
+      ) {
+        return;
+      }
 
-          <Box flex="2" minW="520px">
-            <VStack align="stretch" spacing={3}>
-              <Box borderWidth="1px" borderRadius="md" overflow="hidden">
-                <TacticalMap
-                  combatants={[]}
-                  positions={{}}
-                  currentTurn={null}
-                  highlightMovement={false}
-                  flashingCombatants={null}
-                  movementMode={{ active: false, isRunning: false }}
-                  onMoveSelect={() => {}}
-                  onSelectedCombatantChange={() => {}}
-                  onHoveredCellChange={() => {}}
-                  onSelectedHexChange={handleSelectedHexChange}
-                  terrain={mapDefinition}
-                  mapType={mapType}
-                  mode="MAP_EDITOR"
-                  mapDefinition={mapDefinition}
-                  selectedTerrainType={selectedTerrainType}
-                  brushRadius={brushRadius}
-                  onSelectedTerrainTypeChange={setSelectedTerrainType}
-                  onMapCellEdit={handleMapCellEdit}
-                  onMapCellsEdit={handleMapCellsEdit}
-                  mapHeight={800}
-                />
-              </Box>
+      const modifier = event.ctrlKey || event.metaKey;
+      if (modifier && String(event.key).toLowerCase() === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redoEditor();
+        else undoEditor();
+        return;
+      }
+      if (modifier && String(event.key).toLowerCase() === "y") {
+        event.preventDefault();
+        redoEditor();
+        return;
+      }
+      if (event.key === "Delete" || event.key === "Backspace") {
+        if (deleteSelectedEditorItem()) event.preventDefault();
+      }
+    };
+    window.addEventListener("keydown", handleEditorKeyDown);
+    return () => window.removeEventListener("keydown", handleEditorKeyDown);
+  }, [deleteSelectedEditorItem, redoEditor, undoEditor]);
 
-              {show3DView && (
-                <Box borderWidth="1px" borderRadius="md" overflow="hidden" height="520px">
-                  <HexArena3D
-                    ref={arena3DRef}
-                    mapDefinition={mapDefinition}
-                    fighters={[]}
-                    positions={{}}
-                    terrain={mapDefinition}
-                    mode="MAP_EDITOR"
-                    visible={true}
-                    editorProps={mapProps}
-                    selectedEditorPropId={selectedPropId}
-                    onHexSelect={handleSelectedHexChange}
-                    onEditorPropGrab={beginPropGrab}
-                    onEditorPropHover={updatePropGrabHover}
-                    onEditorPropDrop={completePropDrop}
-                    editorBrushMode={editor3DBrushMode}
-                    onEditorBrushStart={begin3DBrushStroke}
-                    onEditorBrushPaint={update3DBrushStroke}
-                    onEditorBrushEnd={end3DBrushStroke}
-                  />
-                </Box>
-              )}
-            </VStack>
-          </Box>
-        </HStack>
-      </VStack>
+  const mapNameChange = useCallback((value) => { setMapName(value); setIsDirty(true); }, []);
+  const mapTypeChange = useCallback((value) => { setMapType(value); setIsDirty(true); }, []);
+  const lightingChange = useCallback((value) => { setLighting(value); setIsDirty(true); }, []);
+  const fogChange = useCallback((value) => { setEnvironmentalFog(value); setIsDirty(true); }, []);
+  const fogOfWarChange = useCallback((value) => { setFogOfWarEnabled(Boolean(value)); setIsDirty(true); }, []);
+  const terrainChange = useCallback((value) => { setSelectedTerrainType(value); setIsDirty(true); }, []);
+  const wallTerrainChange = useCallback((value) => { setSelectedWallTerrainType(value); setIsDirty(true); }, []);
+
+  const render2DViewport = () => (
+    <Box height="100%" minH="0" borderRadius="lg" overflow="hidden" bg="white" borderWidth="1px">
+      <TacticalMap
+        combatants={[]}
+        positions={{}}
+        currentTurn={null}
+        highlightMovement={false}
+        flashingCombatants={null}
+        movementMode={{ active: false, isRunning: false }}
+        onMoveSelect={() => {}}
+        onSelectedCombatantChange={() => {}}
+        onHoveredCellChange={() => {}}
+        onSelectedHexChange={handleSelectedHexChange}
+        terrain={mapDefinition}
+        mapType={mapType}
+        mode="MAP_EDITOR"
+        mapDefinition={mapDefinition}
+        selectedTerrainType={selectedTerrainType}
+        brushRadius={brushRadius}
+        editorBrushMode={editorInteraction.twoDBrushMode}
+        editorHeightStep={editorHeightStep}
+        editorFlattenHeight={editorFlattenHeight}
+        waterPaintConfig={waterPaintConfig}
+        structureDragMode={
+          activeEditorTool === MAP_EDITOR_TOOLS.STRUCTURE
+            ? structureGeneratorConfig.mode
+            : "edge"
+        }
+        onStructureDragEnd={handleSquareStructureDragEnd}
+        onEditorMutationBegin={checkpointEditorHistory}
+        onSelectedTerrainTypeChange={terrainChange}
+        onMapCellEdit={editorInteraction.brushEnabled ? handleMapCellEdit : null}
+        onMapCellsEdit={editorInteraction.brushEnabled ? handleMapCellsEdit : null}
+        showEditorOverlay={false}
+        showMapControls
+        autoFit
+        mapHeight={viewportHeight}
+      />
     </Box>
   );
+
+  const render3DViewport = () => (
+    <Box height="100%" minH="0" borderRadius="lg" overflow="hidden" bg="black" borderWidth="1px">
+      <HexArena3D
+        ref={arena3DRef}
+        mapDefinition={mapDefinition}
+        fighters={[]}
+        positions={{}}
+        terrain={mapDefinition}
+        mode="MAP_EDITOR"
+        visible={true}
+        editorProps={mapProps}
+        selectedEditorPropId={selectedPropId}
+        onHexSelect={handleSelectedHexChange}
+        onEditorPropGrab={editorInteraction.propInteractionEnabled ? beginPropGrab : null}
+        onEditorPropHover={editorInteraction.propInteractionEnabled ? updatePropGrabHover : null}
+        onEditorPropDrop={editorInteraction.propInteractionEnabled ? completePropDrop : null}
+        editorBrushMode={editorInteraction.threeDBrushMode}
+        onEditorBrushStart={editorInteraction.brushEnabled ? begin3DBrushStroke : null}
+        onEditorBrushPaint={editorInteraction.brushEnabled ? update3DBrushStroke : null}
+        onEditorBrushEnd={editorInteraction.brushEnabled ? end3DBrushStroke : null}
+      />
+    </Box>
+  );
+
+  return (
+    <Box bg="gray.50" height="calc(100vh - 58px)" minH="680px" overflow="hidden">
+      <Box
+        height="64px"
+        px={4}
+        bg="white"
+        borderBottomWidth="1px"
+        display="flex"
+        alignItems="center"
+        justifyContent="space-between"
+        gap={3}
+      >
+        <HStack spacing={3} minW={0}>
+          <Box minW="120px">
+            <Text fontSize="md" fontWeight="800" lineHeight="1.1">Map Maker</Text>
+            <Text fontSize="10px" color="gray.500">Battlefield editor</Text>
+          </Box>
+          <Input
+            size="sm"
+            maxW="320px"
+            value={mapName}
+            onChange={(event) => mapNameChange(event.target.value)}
+            fontWeight="semibold"
+            aria-label="Map name"
+          />
+          {isDirty && <Badge colorScheme="orange">Unsaved</Badge>}
+        </HStack>
+
+        <HStack spacing={2} flexShrink={0}>
+          <Button size="sm" variant="outline" onClick={handleNewMap}>New</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={undoEditor}
+            isDisabled={!editorHistoryState.canUndo}
+            aria-label="Undo map edit"
+            title={editorHistoryState.nextUndoLabel ? "Undo: " + editorHistoryState.nextUndoLabel : "Undo"}
+          >Undo</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={redoEditor}
+            isDisabled={!editorHistoryState.canRedo}
+            aria-label="Redo map edit"
+            title={editorHistoryState.nextRedoLabel ? "Redo: " + editorHistoryState.nextRedoLabel : "Redo"}
+          >Redo</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            colorScheme="red"
+            onClick={deleteSelectedEditorItem}
+            isDisabled={
+              !selectedPropId &&
+              !(
+                activeEditorTool === MAP_EDITOR_TOOLS.STRUCTURE &&
+                selectedHex &&
+                Object.keys(selectedHexCell?.walls || {}).length > 0
+              )
+            }
+            aria-label="Delete selected map object"
+          >Delete Selected</Button>
+          <Button size="sm" colorScheme="blue" onClick={handleSaveToLibrary}>Save</Button>
+          <Button size="sm" colorScheme="green" onClick={handleTestBattle}>Test Battle</Button>
+          <ButtonGroup size="sm" isAttached variant="outline" ml={2}>
+            <Button colorScheme={viewMode === "2d" ? "blue" : "gray"} variant={viewMode === "2d" ? "solid" : "outline"} onClick={() => setViewMode("2d")}>2D</Button>
+            <Button colorScheme={viewMode === "3d" ? "blue" : "gray"} variant={viewMode === "3d" ? "solid" : "outline"} onClick={() => setViewMode("3d")}>3D</Button>
+            <Button colorScheme={viewMode === "split" ? "blue" : "gray"} variant={viewMode === "split" ? "solid" : "outline"} onClick={() => setViewMode("split")}>Split</Button>
+          </ButtonGroup>
+        </HStack>
+      </Box>
+
+      <Grid
+        templateColumns={{ base: "1fr", xl: "340px minmax(0, 1fr) 290px", "2xl": "360px minmax(0, 1fr) 310px" }}
+        height="calc(100% - 64px)"
+        minH="0"
+      >
+        <GridItem display={{ base: "none", xl: "block" }} minW="0" minH="0">
+          <MapMakerToolSidebar
+            mapName={mapName}
+            mapType={mapType}
+            gridWidth={gridWidth}
+            gridHeight={gridHeight}
+            onMapNameChange={mapNameChange}
+            onMapTypeChange={mapTypeChange}
+            onGridWidthChange={(value) => { setGridWidth(value); setIsDirty(true); }}
+            onGridHeightChange={(value) => { setGridHeight(value); setIsDirty(true); }}
+            onResizeGrid={handleResizeGrid}
+            selectedTerrainType={selectedTerrainType}
+            onSelectedTerrainTypeChange={terrainChange}
+            selectedWallTerrainType={selectedWallTerrainType}
+            onSelectedWallTerrainTypeChange={wallTerrainChange}
+            brushRadius={brushRadius}
+            onBrushRadiusChange={setBrushRadius}
+            editorBrushMode={editorBrushMode}
+            onEditorBrushModeChange={setEditorBrushMode}
+            editorHeightStep={editorHeightStep}
+            onEditorHeightStepChange={setEditorHeightStep}
+            editorFlattenHeight={editorFlattenHeight}
+            onEditorFlattenHeightChange={(value) => setEditorFlattenHeight(clampHexHeight(value))}
+            selectedHexHeight={selectedHexHeight}
+            selectedHex={selectedHex}
+            selectedHexCell={selectedHexCell}
+            selectedWaterEnvironment={selectedWaterEnvironment}
+            waterPaintConfig={waterPaintConfig}
+            onWaterPaintConfigChange={setWaterPaintConfig}
+            onApplySelectedWaterEnvironment={applySelectedWaterEnvironment}
+            onApplyStructureEdge={applySelectedSquareStructureEdge}
+            structureGeneratorConfig={structureGeneratorConfig}
+            onStructureGeneratorConfigChange={setStructureGeneratorConfig}
+            bridges={mapDefinition?.structures?.bridges || []}
+            onDeleteBridge={deleteBridgeById}
+            editor3DBrushMode={editor3DBrushMode}
+            onEditor3DBrushModeChange={setEditor3DBrushMode}
+            selectedPropType={selectedPropType}
+            onSelectedPropTypeChange={setSelectedPropType}
+            onPlaceProp={handlePlaceSelectedProp}
+            canPlaceProp={Boolean(selectedHex)}
+            lighting={lighting}
+            environmentalFog={environmentalFog}
+            fogOfWarEnabled={fogOfWarEnabled}
+            onLightingChange={lightingChange}
+            onEnvironmentalFogChange={fogChange}
+            onFogOfWarEnabledChange={fogOfWarChange}
+            getCurrentMap={buildExportMap}
+            onOpenMap={handleOpenBattlefieldMap}
+            importExportJson={importExportJson}
+            onImportExportJsonChange={setImportExportJson}
+            onExport={handleExport}
+            onImport={handleImport}
+            libraryRevision={libraryRevision}
+            activeTool={activeEditorTool}
+            onActiveToolChange={handleActiveEditorToolChange}
+          />
+        </GridItem>
+
+        <GridItem minW="0" minH="0" p={2} overflow="hidden">
+          <VStack align="stretch" spacing={2} height="100%">
+            <HStack
+              minH="36px"
+              px={3}
+              py={1}
+              bg="white"
+              borderWidth="1px"
+              borderRadius="md"
+              justify="space-between"
+              flexShrink={0}
+            >
+              <HStack spacing={2} wrap="wrap">
+                <Badge>{Number(gridWidth) || 0} × {Number(gridHeight) || 0}</Badge>
+                <Badge colorScheme="blue">{activeEditorTool === MAP_EDITOR_TOOLS.HEIGHT ? "Height Tool" : activeEditorTool === MAP_EDITOR_TOOLS.STRUCTURE ? "Structure Tool" : activeEditorTool === MAP_EDITOR_TOOLS.PROPS ? "Prop Tool" : activeEditorTool === MAP_EDITOR_TOOLS.TERRAIN ? "Terrain Tool" : "Select Mode"}</Badge>
+                <Badge>{mapType === "square" ? "Square" : "Hex"}</Badge>
+                <Badge colorScheme="yellow">{LIGHTING_LABELS[lighting] || lighting}</Badge>
+                {environmentalFog !== BATTLEFIELD_FOG.CLEAR && <Badge colorScheme="gray">{FOG_LABELS[environmentalFog] || environmentalFog}</Badge>}
+                {fogOfWarEnabled && <Badge colorScheme="purple">Fog of War</Badge>}
+              </HStack>
+              <Text fontSize="xs" color="gray.500">
+                {selectedHex ? `Hex ${selectedHex.q}, ${selectedHex.r}` : `${mapProps.length} props`}
+              </Text>
+            </HStack>
+
+            <Box flex="1" minH="0" overflow="hidden">
+              {/*
+                Milestone 8C-8C.2 R5.2.1 — keep both viewports mounted.
+                View-mode changes alter layout/visibility only; HexArena3D is not
+                destroyed and recreated when switching 2D / 3D / Split.
+              */}
+              <Grid
+                templateColumns={viewMode === "split" ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr)"}
+                gap={viewMode === "split" ? 2 : 0}
+                height="100%"
+                minH="0"
+              >
+                <GridItem
+                  minW="0"
+                  minH="0"
+                  gridColumn="1"
+                  gridRow="1"
+                  display={viewMode === "3d" ? "none" : "block"}
+                >
+                  {render2DViewport()}
+                </GridItem>
+                <GridItem
+                  minW="0"
+                  minH="0"
+                  gridColumn={viewMode === "split" ? "2" : "1"}
+                  gridRow="1"
+                  display={viewMode === "2d" ? "none" : "block"}
+                >
+                  {render3DViewport()}
+                </GridItem>
+              </Grid>
+            </Box>
+          </VStack>
+        </GridItem>
+
+        <GridItem display={{ base: "none", xl: "block" }} minW="0" minH="0" bg="white" borderLeftWidth="1px" overflowY="auto">
+          <MapMakerInspectorPanel
+            selectedHex={selectedHex}
+            selectedHexCell={selectedHexCell}
+            selectedHexHeight={selectedHexHeight}
+            selectedHexTerrain={selectedHexTerrain}
+            selectedHexWallTerrain={selectedHexWallTerrain}
+            selectedHexEdgeTransitions={selectedHexEdgeTransitions}
+            onUpdateSelectedHex={updateSelectedHexCell}
+            selectedProp={selectedProp}
+            onRotateProp={rotateSelectedProp}
+            onScaleProp={scaleSelectedProp}
+            onDeleteProp={deleteSelectedProp}
+            onDeleteSelectedStructures={deleteSelectedSquareStructures}
+            mapType={mapType}
+            mapSummary={mapSummary}
+          />
+        </GridItem>
+      </Grid>
+    </Box>
+  );
+
 }
 
 
