@@ -1,4 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef, startTransition, useMemo } from "react";
+import {
+  admitStructureAwareCombatMovement,
+  filterStructureAwareCombatNeighbors,
+} from "../utils/combat/structureAwareMovementAuthority.js";
+import {
+  createStructureSpatialIndex,
+  getCombatMovementStructureBlock,
+  hasCombatStructureLineOfSight,
+  describeStructureSpatialBlock,
+} from "../utils/maps/structureSpatialQueryAuthority.js";
 import PropTypes from "prop-types";
 import { useNavigate } from "react-router-dom";
 import {
@@ -596,6 +606,15 @@ import {
 import { getOverwatchCapabilities } from "../utils/combat/tacticalOverwatchIntent.js";
 import { TACTICAL_OVERWATCH_CHOICES } from "../utils/combat/tacticalOverwatchWindow.js";
 import { buildTacticalPath, planDefaultTacticalMovement } from "../utils/combat/tacticalMovementIntent.js";
+import {
+  computeBattlefieldReachability,
+  filterBattlefieldTraversalNeighbors,
+  describeBattlefieldTraversalFailure,
+  findBattlefieldTraversalPath,
+  resolveBattlefieldPathTraversal,
+  resolveBattlefieldTraversalStep,
+  validateBattlefieldTraversalExecutionSnapshot,
+} from "../utils/maps/battlefieldTraversalAuthority.js";
 import { createTacticalActionIntent } from "../utils/combat/tacticalActionIntent.js";
 import {
   findTacticalAttackByIntent,
@@ -1218,6 +1237,7 @@ function findRetreatDestination({
   maxSteps,
   enemyId,
   isHexOccupied,
+  getNeighborPositions = getHexNeighbors,
 }) {
   // Delegate to routingSystem (best-of-all-within-N-steps + tie-moves + edge preference)
   return findBestRetreatHex({
@@ -1225,7 +1245,7 @@ function findRetreatDestination({
     threatPositions,
     maxSteps,
     isHexOccupied: (x, y) => (isHexOccupied ? isHexOccupied(x, y, enemyId) : false),
-    getHexNeighbors,
+    getHexNeighbors: getNeighborPositions,
     isValidPosition: (x, y) => isValidPosition(x, y),
     calculateDistance,
     gridWidth: GRID_CONFIG.GRID_WIDTH,
@@ -2918,6 +2938,54 @@ function CombatPage({ characters = [] }) {
     return phase0Results?.environment || null;
   }, [combatTerrain, mapDefinition, phase0Results]);
 
+  // Milestone 8C-8C.3A: renderer-independent structure query index.
+  const structureSpatialIndex = useMemo(
+    () => createStructureSpatialIndex(arenaEnvironment || {}),
+    [arenaEnvironment]
+  );
+
+  const activeBattlefieldTraversalMap = useMemo(() => (
+    Array.isArray(arenaEnvironment?.grid) ? arenaEnvironment : null
+  ), [arenaEnvironment]);
+
+  // Planner adapter: structure and terrain legality are filtered through the
+  // same authorities used again by the movement commit boundary.
+  const getCanonicalCombatTraversalNeighbors = useCallback((x, y, {
+    actor = null,
+    movementMode = "walk",
+    climbAuthorized = false,
+    swimAuthorized = false,
+    waterProfile = null,
+    traversalLayer = "lower",
+  } = {}) => {
+    const structureResult = filterStructureAwareCombatNeighbors({
+      mapDefinition: arenaEnvironment || {},
+      index: structureSpatialIndex,
+      actor,
+      from: { x, y },
+      neighbors: getHexNeighbors(x, y) || [],
+      movementMode,
+    });
+    if (!activeBattlefieldTraversalMap) return structureResult.neighbors;
+    return filterBattlefieldTraversalNeighbors({
+      mapDefinition: activeBattlefieldTraversalMap,
+      from: { x, y },
+      neighbors: structureResult.neighbors,
+      movementMode,
+      climbAuthorized,
+      swimAuthorized,
+      waterProfile,
+      traversalLayer,
+      isPositionLegal: (position) => isValidPosition(position.x, position.y),
+    }).neighbors;
+  }, [activeBattlefieldTraversalMap, arenaEnvironment, structureSpatialIndex]);
+
+  // Compatibility adapter for existing walking planners.
+  const getStructureAwareCombatNeighbors = useCallback(
+    (x, y) => getCanonicalCombatTraversalNeighbors(x, y),
+    [getCanonicalCombatTraversalNeighbors],
+  );
+
   useEffect(() => {
     projectilesRef.current = projectiles;
   }, [projectiles]);
@@ -3617,6 +3685,14 @@ function CombatPage({ characters = [] }) {
       const p1 = pos?.[viewer?.id];
       const p2 = pos?.[target?.id];
       if (p1 && p2) {
+        const structureLos = hasCombatStructureLineOfSight({
+          mapDefinition: arenaEnvironment || terrain || {},
+          index: structureSpatialIndex,
+          from: p1,
+          to: p2,
+        });
+        if (!structureLos.clear) return false;
+
         const d = calculateDistance(p1, p2);
         if (typeof d === "number" && d <= 5.5) return true;
       }
@@ -3645,7 +3721,7 @@ function CombatPage({ characters = [] }) {
     }
 
     return base;
-  }, [isTinyPrey, isPredatorBird]);
+  }, [isTinyPrey, isPredatorBird, arenaEnvironment, structureSpatialIndex]);
 
   // Helper to calculate allies down ratio for morale checks
   const getAlliesDownRatio = useCallback((fightersArray, subject) => {
@@ -5099,7 +5175,7 @@ function CombatPage({ characters = [] }) {
         threatPositions,
         maxSteps: controlledMaxSteps,
         isHexOccupied: occupiedForMove,
-        getHexNeighbors,
+        getHexNeighbors: getStructureAwareCombatNeighbors,
         // movementRules expects numeric bounds in arguments three and four.
         isValidPosition: (x, y) => isValidPosition(
           x,
@@ -5121,7 +5197,7 @@ function CombatPage({ characters = [] }) {
           threatPositions,
           maxSteps: controlledMaxSteps,
           isHexOccupied: occupiedForMove,
-          getHexNeighbors,
+          getHexNeighbors: getStructureAwareCombatNeighbors,
           isValidPosition: (x, y) => isValidPosition(
             x,
             y,
@@ -5135,6 +5211,27 @@ function CombatPage({ characters = [] }) {
         executedSurvivalIntent = SURVIVAL_INTENTS.DEFENSIVE_BACKSTEP;
       }
 
+      if (activeBattlefieldTraversalMap && survivalMove?.position) {
+        const terrainSurvivalPlan = findBattlefieldTraversalPath({
+          mapDefinition: activeBattlefieldTraversalMap,
+          from: myPos,
+          destination: survivalMove.position,
+          movementMode: "walk",
+          maxDistanceFeet: effectiveControlledMovement.distanceFeet,
+          occupied,
+          isPositionLegal: (position) => isValidPosition(position.x, position.y),
+          allowPartial: true,
+        });
+        survivalMove = terrainSurvivalPlan?.accepted
+          ? {
+              ...survivalMove,
+              position: terrainSurvivalPlan.destination,
+              path: terrainSurvivalPlan.path,
+              distanceFeet: terrainSurvivalPlan.effectiveDistanceFeet,
+              terrainStaminaCost: terrainSurvivalPlan.staminaCost,
+            }
+          : null;
+      }
       const destination = survivalMove?.position || myPos;
       const movedForSurvival = destination.x !== myPos.x || destination.y !== myPos.y;
       const routedStaminaCost = movedForSurvival
@@ -5144,7 +5241,7 @@ function CombatPage({ characters = [] }) {
             movementType: "controlled-withdrawal",
             survivalIntent: executedSurvivalIntent,
             armorProfile: survivalDecision.armorProfile,
-          })
+          }) + Math.max(0, Number(survivalMove?.terrainStaminaCost) || 0)
         : 0;
       const routedStaminaSpent = routedStaminaCost > 0
         ? spendStamina(fighter, routedStaminaCost).spent
@@ -5189,7 +5286,7 @@ function CombatPage({ characters = [] }) {
           currentPos: myPos,
           threatPositions,
           maxSteps: maxFleeHexes,
-          getHexNeighbors,
+          getHexNeighbors: getStructureAwareCombatNeighbors,
           gridWidth: GRID_CONFIG.GRID_WIDTH,
           gridHeight: GRID_CONFIG.GRID_HEIGHT,
         });
@@ -5312,7 +5409,7 @@ function CombatPage({ characters = [] }) {
       mapBounds,
       occupied,
       {
-        getHexNeighbors,
+        getHexNeighbors: getStructureAwareCombatNeighbors,
         calculateDistance,
       }
     );
@@ -5345,8 +5442,22 @@ function CombatPage({ characters = [] }) {
     const routePath = Array.isArray(escapeRoute.path) && escapeRoute.path.length > 1
       ? escapeRoute.path
       : [myPos, escapeRoute.position].filter(Boolean);
+    const terrainEscapePlan = activeBattlefieldTraversalMap && escapeRoute.position
+      ? findBattlefieldTraversalPath({
+          mapDefinition: activeBattlefieldTraversalMap,
+          from: myPos,
+          destination: escapeRoute.position,
+          movementMode: "run",
+          maxDistanceFeet: effectivePanicMovement.distanceFeet,
+          occupied,
+          isPositionLegal: (position) => isValidPosition(position.x, position.y),
+          allowPartial: true,
+        })
+      : null;
     const stepIndex = Math.min(routePath.length - 1, panicMaxHexes);
-    const nextPosition = routePath[stepIndex] || escapeRoute.position;
+    const nextPosition = terrainEscapePlan?.accepted
+      ? terrainEscapePlan.destination
+      : (routePath[stepIndex] || escapeRoute.position);
     const direction = getFleeDirectionFromEdge(escapeRoute.position || nextPosition, mapBounds);
     const directionLabel = {
       north: "northern",
@@ -5354,7 +5465,11 @@ function CombatPage({ characters = [] }) {
       east: "eastern",
       west: "western",
     }[direction] || "outer";
-    const distanceFeet = Math.round(calculateDistance(myPos, nextPosition));
+    const distanceFeet = Math.round(
+      terrainEscapePlan?.accepted
+        ? terrainEscapePlan.effectiveDistanceFeet
+        : calculateDistance(myPos, nextPosition)
+    );
     const panicActionToken = currentTurnTokenRef.current || initiativeTurnIdRef.current || null;
     const panicStaminaResolution = resolvePanicFleeStaminaSpend({
       fighter,
@@ -5459,6 +5574,8 @@ function CombatPage({ characters = [] }) {
     positions,
     fighters,
     combatTerrain,
+    activeBattlefieldTraversalMap,
+    getStructureAwareCombatNeighbors,
     addLog,
     commitFighters,
     finalizeNoMovePreservingPosition,
@@ -6313,10 +6430,30 @@ function CombatPage({ characters = [] }) {
         if (!approachWalk) return planned;
 
         const walkBudgetFeet = getCanonicalMovementActionBudgetFt(context.actor, "walk");
-        const maxCommittedSteps = Math.max(1, Math.floor(walkBudgetFeet / 5));
-        const committedPath = planned.intent.path
-          .slice(0, maxCommittedSteps)
-          .map((step) => ({ ...step }));
+        const plannedEndpoint = planned.intent.path.at(-1) || planned.intent.destination;
+        const terrainOccupied = new Set(
+          Object.entries(context.positions || {})
+            .filter(([candidateId]) => String(candidateId) !== String(actorId))
+            .map(([, position]) => `${position.x},${position.y}`),
+        );
+        const terrainWalkPlan = activeBattlefieldTraversalMap && actorPosition && plannedEndpoint
+          ? findBattlefieldTraversalPath({
+              mapDefinition: activeBattlefieldTraversalMap,
+              from: actorPosition,
+              destination: plannedEndpoint,
+              movementMode: "walk",
+              maxDistanceFeet: walkBudgetFeet,
+              occupied: terrainOccupied,
+              isPositionLegal: (position) => isValidPosition(position.x, position.y),
+              allowPartial: true,
+            })
+          : null;
+        const committedPath = terrainWalkPlan?.accepted
+          ? terrainWalkPlan.path.map((step) => ({ ...step }))
+          : planned.intent.path
+              .slice(0, Math.max(1, Math.floor(walkBudgetFeet / 5)))
+              .map((step) => ({ ...step }));
+        const maxCommittedSteps = committedPath.length;
         const walkIntent = {
           ...planned.intent,
           mode: "walk",
@@ -6387,7 +6524,22 @@ function CombatPage({ characters = [] }) {
         if (!wantsCharge && !wantsBrace) return null;
 
         const occupied = new Set(Object.entries(pulsePositions).filter(([id]) => id !== actorId).map(([, value]) => `${value.x},${value.y}`));
-        const path = buildTacticalPath({ from: actorPosition, destination: targetPosition, occupied, isHexLegal: (hex) => isValidPosition(hex.x, hex.y) });
+        const linePath = buildTacticalPath({ from: actorPosition, destination: targetPosition, occupied, isHexLegal: (hex) => isValidPosition(hex.x, hex.y) });
+        const chargeTerrainPlan = wantsCharge && activeBattlefieldTraversalMap
+          ? findBattlefieldTraversalPath({
+              mapDefinition: activeBattlefieldTraversalMap,
+              from: actorPosition,
+              destination: targetPosition,
+              movementMode: "charge",
+              maxDistanceFeet: getCanonicalMovementActionBudgetFt(actor, "charge"),
+              occupied,
+              isPositionLegal: (position) => isValidPosition(position.x, position.y),
+              allowPartial: true,
+            })
+          : null;
+        const path = wantsCharge
+          ? (chargeTerrainPlan?.accepted ? chargeTerrainPlan.path : (activeBattlefieldTraversalMap ? [] : linePath))
+          : linePath;
 
         if (wantsCharge) {
           const hostileBraceInPath = [...runtime.actionRuntime.chargeBraceRuntime.bracesByActor.values()].some((brace) => (
@@ -6439,6 +6591,32 @@ function CombatPage({ characters = [] }) {
           combatOverRef.current
         ) {
           return { accepted: false, reason: "stale-generation-step-blocked" };
+        }
+        const terrainStep = activeBattlefieldTraversalMap
+          ? resolveBattlefieldTraversalStep({
+              mapDefinition: activeBattlefieldTraversalMap,
+              from,
+              to,
+              movementMode: movementMode || "walk",
+            })
+          : { accepted: true, staminaCost: 0 };
+        if (!terrainStep.accepted) {
+          return { accepted: false, reason: terrainStep.reason || "terrain-step-blocked" };
+        }
+        if (Number(terrainStep.staminaCost || 0) > 0) {
+          const actor = (fightersRef.current || []).find((candidate) => (
+            String(getCombatActorId(candidate) ?? "") === String(actorId ?? "")
+          ));
+          const terrainSpend = spendCombatStamina({
+            fighter: actor,
+            amount: terrainStep.staminaCost,
+            reason: "movement",
+            source: "tactical-pulse-steep-slope",
+            executionKey: `${runtime.generationId}:${pulseIndex}:${actorId}:terrain-step:${stepPass}`,
+          });
+          if (terrainSpend?.accepted !== true) {
+            return { accepted: false, reason: "terrain-stamina-rejected" };
+          }
         }
         const presentationActor = (fightersRef.current || []).find((candidate) => (
           String(getCombatActorId(candidate) ?? "") === String(actorId ?? "")
@@ -7273,7 +7451,25 @@ function CombatPage({ characters = [] }) {
     const capability = getChargeCapabilities(weapon);
     const from = positionsRef.current?.[actorId]; const destination = positionsRef.current?.[targetActorId];
     const occupied = new Set(Object.entries(positionsRef.current || {}).filter(([id]) => id !== actorId).map(([, value]) => `${value.x},${value.y}`));
-    const path = buildTacticalPath({ from, destination, occupied, isHexLegal: (hex) => isValidPosition(hex.x, hex.y) });
+    const terrainChargePlan = activeBattlefieldTraversalMap
+      ? findBattlefieldTraversalPath({
+          mapDefinition: activeBattlefieldTraversalMap,
+          from,
+          destination,
+          movementMode: "charge",
+          maxDistanceFeet: getCanonicalMovementActionBudgetFt(actor, "charge"),
+          occupied,
+          isPositionLegal: (position) => isValidPosition(position.x, position.y),
+          allowPartial: true,
+        })
+      : null;
+    const path = terrainChargePlan?.accepted
+      ? terrainChargePlan.path
+      : (activeBattlefieldTraversalMap ? [] : buildTacticalPath({ from, destination, occupied, isHexLegal: (hex) => isValidPosition(hex.x, hex.y) }));
+    if (activeBattlefieldTraversalMap && path.length < capability.minimumCommittedSteps) {
+      addLog("Charge preparation rejected: terrain does not provide a legal charge lane.", "warning");
+      return false;
+    }
     const result = registerTacticalCharge(pulseRuntime.actionRuntime.chargeBraceRuntime, {
       generationId: pulseRuntime.generationId,
       combatSession: pulseRuntime.combatSession,
@@ -7292,7 +7488,7 @@ function CombatPage({ characters = [] }) {
     if (!result.accepted) addLog(`Charge preparation rejected: ${result.reason}.`, "warning");
     else emitChargeBraceEvents(result.events);
     return result.accepted;
-  }, [addLog, emitChargeBraceEvents, getFighterControlMode, selectedAttackWeapon, selectedTarget]);
+  }, [addLog, emitChargeBraceEvents, getFighterControlMode, selectedAttackWeapon, selectedTarget, activeBattlefieldTraversalMap]);
 
   const prepareManualTacticalBrace = useCallback(() => {
     if (combatTimingModeRef.current !== COMBAT_TIMING_MODES.TACTICAL_PULSE || !combatActiveRef.current || combatOverRef.current || aiControlEnabledRef.current) return false;
@@ -15037,18 +15233,51 @@ function CombatPage({ characters = [] }) {
       ) {
         return;
       }
+      const terrainFighter = fighters.find((candidate) => candidate.id === eid);
+      const terrainOrigin = positions[eid];
+      const terrainBudgetFeet = getCanonicalMovementActionBudgetFt(terrainFighter, mode);
+      const terrainOccupied = new Set(
+        Object.entries(positions || {})
+          .filter(([candidateId]) => String(candidateId) !== String(eid))
+          .map(([, position]) => `${position.x},${position.y}`),
+      );
+      const terrainReachability = activeBattlefieldTraversalMap && terrainFighter && terrainOrigin
+        ? computeBattlefieldReachability({
+            mapDefinition: activeBattlefieldTraversalMap,
+            origin: terrainOrigin,
+            movementMode: mode,
+            maxDistanceFeet: terrainBudgetFeet,
+            occupied: terrainOccupied,
+            isPositionLegal: (position) => isValidPosition(position.x, position.y),
+          })
+        : null;
+      const terrainByKey = terrainReachability?.accepted ? terrainReachability.byKey : null;
+
       if (reachable) {
-        const fighter = fighters.find((candidate) => candidate.id === eid);
-        const origin = positions[eid];
-        const budgetFeet = getCanonicalMovementActionBudgetFt(fighter, mode);
-        // A manual Walk/Run click always represents one complete action.
+        const fighter = terrainFighter;
+        const origin = terrainOrigin;
+        const budgetFeet = terrainBudgetFeet;
+        // The engine supplies broad reachability; battlefield traversal authority
+        // removes cliff/wall crossings and applies slope-adjusted movement cost.
         const highlight = reachable.hexes
           .map((hex) => ({ x: hex.x, y: hex.y, actionCost: 1 }))
           .filter((hex) => (
             origin &&
             getOddRHexDistanceFeet(origin, hex) <= budgetFeet &&
-            !isHexOccupied(hex.x, hex.y, eid)
-          ));
+            !isHexOccupied(hex.x, hex.y, eid) &&
+            (!terrainByKey || terrainByKey.has(`${hex.x},${hex.y}`))
+          ))
+          .map((hex) => {
+            const terrainEntry = terrainByKey?.get(`${hex.x},${hex.y}`);
+            return terrainEntry
+              ? {
+                  ...hex,
+                  path: terrainEntry.path,
+                  effectiveDistanceFeet: terrainEntry.costFeet,
+                  terrainStaminaCost: terrainEntry.staminaCost,
+                }
+              : hex;
+          });
         setEngineValidMoves(highlight);
 
         const costsObj = {};
@@ -15058,25 +15287,37 @@ function CombatPage({ characters = [] }) {
         setMoveCostsByHex(costsObj);
         addLog(`manual ${mode === "RUN" ? "run" : "walk"} budget: ${budgetFeet} ft; valid hexes: ${highlight.length}`, "info");
       } else {
-        // FALLBACK (temporary while verifying engine)
-        const fighter = fighters.find(f => f.id === eid);
-        if (fighter && positions[eid]) {
-          const speed = fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10;
-          const actionsPerRound = fighter.actionsPerRound || 1;
-          const validPositions = getMovementRange(
-            positions[eid],
-            speed,
-            actionsPerRound,
-            {},
-            mode === "RUN"
-          );
-          const budgetFeet = getCanonicalMovementActionBudgetFt(fighter, mode);
-          const fallbackMoves = validPositions
-            .map((position) => ({ x: position.x, y: position.y, actionCost: 1 }))
-            .filter((position) => (
-              getOddRHexDistanceFeet(positions[eid], position) <= budgetFeet &&
-              !isHexOccupied(position.x, position.y, eid)
-            ));
+        // Prefer canonical battlefield reachability when an authored elevation grid exists.
+        const fighter = terrainFighter;
+        if (fighter && terrainOrigin) {
+          const budgetFeet = terrainBudgetFeet;
+          let fallbackMoves;
+          if (terrainReachability?.accepted) {
+            fallbackMoves = terrainReachability.hexes.map((position) => ({
+              x: position.x,
+              y: position.y,
+              actionCost: 1,
+              path: position.path,
+              effectiveDistanceFeet: position.effectiveDistanceFeet,
+              terrainStaminaCost: position.terrainStaminaCost,
+            }));
+          } else {
+            const speed = fighter.Spd || fighter.spd || fighter.attributes?.Spd || fighter.attributes?.spd || 10;
+            const actionsPerRound = fighter.actionsPerRound || 1;
+            const validPositions = getMovementRange(
+              terrainOrigin,
+              speed,
+              actionsPerRound,
+              {},
+              mode === "RUN"
+            );
+            fallbackMoves = validPositions
+              .map((position) => ({ x: position.x, y: position.y, actionCost: 1 }))
+              .filter((position) => (
+                getOddRHexDistanceFeet(terrainOrigin, position) <= budgetFeet &&
+                !isHexOccupied(position.x, position.y, eid)
+              ));
+          }
           setEngineValidMoves(fallbackMoves);
           setMoveCostsByHex(Object.fromEntries(fallbackMoves.map((position) => [`${position.x},${position.y}`, 1])));
           addLog(`Engine reachability failed; fallback limited to one ${mode === "RUN" ? "run" : "walk"} action (${budgetFeet} ft).`, "warning");
@@ -15103,6 +15344,7 @@ function CombatPage({ characters = [] }) {
     addLog,
     turnCounter,
     isHexOccupied,
+    activeBattlefieldTraversalMap,
   ]);
 
   // Compute landing preview path when conditions are met
@@ -20760,13 +21002,37 @@ function CombatPage({ characters = [] }) {
       return;
     }
 
-    if (movementMode.active && selectedMovementFighter && positions[selectedMovementFighter]) {
-      const oldPos = positions[selectedMovementFighter];
+    if (
+      movementMode.active &&
+      selectedMovementFighter &&
+      (positionsRef.current?.[selectedMovementFighter] || positions[selectedMovementFighter])
+    ) {
+      const oldPos = positionsRef.current?.[selectedMovementFighter] || positions[selectedMovementFighter];
 
       // Additional safety check: verify this is a valid move and check action cost
       const combatant = fighters.find(f => f.id === selectedMovementFighter);
       let selectedMove = null;
 
+      if (combatant) {
+        const distanceFeet = calculateDistance(oldPos, { x, y });
+        if (Number.isFinite(distanceFeet) && distanceFeet <= 5.5) {
+          const structureBlock = getCombatMovementStructureBlock({
+            mapDefinition: arenaEnvironment || combatTerrain || {},
+            index: structureSpatialIndex,
+            from: oldPos,
+            to: { x, y },
+            actorCanClimb: combatant?.moveCaps?.canClimb === true,
+          });
+          if (structureBlock.blocked) {
+            const obstacle = describeStructureSpatialBlock(structureBlock.blocker);
+            const climbNote = structureBlock.canTraverseWithClimb
+              ? " Use a climb action to cross it."
+              : "";
+            addLog(`🚧 ${combatant.name} manual movement blocked by ${obstacle}.${climbNote}`, "warning");
+            return;
+          }
+        }
+      }
       if (combatant) {
         // Check if combatant has enough action points
         if (combatant.remainingActions <= 0) {
@@ -20780,7 +21046,7 @@ function CombatPage({ characters = [] }) {
             ...sharedMove,
             actionCost: 1,
           };
-        } else {
+        } else if (!activeBattlefieldTraversalMap) {
           const speed = combatant.Spd || combatant.spd || combatant.attributes?.Spd || combatant.attributes?.spd || 10;
           const actionsPerRound = combatant.actionsPerRound || 1;
           const validPositions = getMovementRange(oldPos, speed, actionsPerRound, {}, movementMode.isRunning);
@@ -20863,16 +21129,43 @@ function CombatPage({ characters = [] }) {
       const manualBudgetFeet = selectedGroundMode === "flight"
         ? Number.POSITIVE_INFINITY
         : getCanonicalMovementActionBudgetFt(combatant, selectedGroundMode);
-      const occupiedHexes = new Set(Object.entries(positions)
+      const occupiedHexes = new Set(Object.entries(positionsRef.current || positions)
         .filter(([candidateId]) => candidateId !== selectedMovementFighter)
         .map(([, position]) => `${position.x},${position.y}`));
-      const manualMovementPath = buildTacticalPath({
-        from: oldPos,
-        destination: { x, y },
-        occupied: occupiedHexes,
-        isHexLegal: (hex) => isValidPosition(hex.x, hex.y),
-      });
-      const manualDistanceFeet = manualMovementPath.length * 5;
+      const terrainMovementPlan = activeBattlefieldTraversalMap
+        ? findBattlefieldTraversalPath({
+            mapDefinition: activeBattlefieldTraversalMap,
+            actorId: selectedMovementFighter,
+            from: oldPos,
+            destination: { x, y },
+            movementMode: selectedGroundMode,
+            maxDistanceFeet: manualBudgetFeet,
+            occupied: occupiedHexes,
+            isPositionLegal: (position) => isValidPosition(position.x, position.y),
+            waterProfile: combatant,
+          })
+        : null;
+      if (activeBattlefieldTraversalMap && (!terrainMovementPlan?.accepted || !terrainMovementPlan?.exact)) {
+        addLog(
+          `${combatant.name} cannot ${selectedGroundMode} there: ${describeBattlefieldTraversalFailure(terrainMovementPlan?.reason)}.`,
+          "warning",
+        );
+        return;
+      }
+      const manualMovementPath = terrainMovementPlan?.accepted
+        ? terrainMovementPlan.path.map((step) => ({ ...step }))
+        : buildTacticalPath({
+            from: oldPos,
+            destination: { x, y },
+            occupied: occupiedHexes,
+            isHexLegal: (hex) => isValidPosition(hex.x, hex.y),
+          });
+      const manualDistanceFeet = terrainMovementPlan?.accepted
+        ? terrainMovementPlan.effectiveDistanceFeet
+        : manualMovementPath.length * 5;
+      const manualTerrainStaminaCost = terrainMovementPlan?.accepted
+        ? Math.max(0, Number(terrainMovementPlan.staminaCost) || 0)
+        : 0;
       if (manualDistanceFeet <= 0 || manualDistanceFeet > manualBudgetFeet) {
         addLog(
           `${combatant.name} cannot ${selectedGroundMode} ${manualDistanceFeet || getOddRHexDistanceFeet(oldPos, { x, y })} ft in one action; limit is ${manualBudgetFeet} ft.`,
@@ -21153,6 +21446,21 @@ function CombatPage({ characters = [] }) {
       }
 
       const isClosingToMelee = false;
+
+      if (manualTerrainStaminaCost > 0) {
+        const terrainSpend = spendCombatStamina({
+          fighter: combatant,
+          amount: manualTerrainStaminaCost,
+          reason: "movement",
+          source: "battlefield-steep-slope",
+          executionKey: `${combatSessionRef.current}:${initiativeTurnIdRef.current}:${combatant.id}:terrain:${x},${y}`,
+        });
+        if (terrainSpend?.accepted !== true) {
+          addLog(`${combatant.name} cannot cross the steep grade without enough stamina.`, "warning");
+          return;
+        }
+        addLog(`${combatant.name} spends ${manualTerrainStaminaCost} additional stamina negotiating the steep slope.`, "info");
+      }
 
       if (isClosingToMelee) {
         // Character is closing into melee range - temporarily occupy same hex
@@ -21525,7 +21833,10 @@ function CombatPage({ characters = [] }) {
     setSelectedAttackWeapon,
     setSelectedManeuver,
     setSelectedActionType,
+    activeBattlefieldTraversalMap,
     spendCombatStamina,
+    arenaEnvironment,
+    structureSpatialIndex,
     commandCatalogTargets,
     selectedTarget,
   ]);
@@ -22706,12 +23017,28 @@ function CombatPage({ characters = [] }) {
       calculateDistanceFeet: calculateDistance,
       currentRound: meleeRoundRef.current,
       terrainAt: getFormationTerrainAt,
-      getNeighbors: getHexNeighbors,
-      isPositionLegal: (position) => isValidPosition(position.x, position.y),
+      getNeighbors: getStructureAwareCombatNeighbors,
+      isPositionLegal: (position) => {
+        if (!isValidPosition(position.x, position.y)) return false;
+        const actorPosition = positionsRef.current?.[actor.id] || actor.position;
+        if (!activeBattlefieldTraversalMap || !actorPosition) return true;
+        return resolveBattlefieldTraversalStep({
+          mapDefinition: activeBattlefieldTraversalMap,
+          from: actorPosition,
+          to: position,
+          movementMode: "walk",
+        }).accepted;
+      },
       isOccupied: (position, actorId) => isHexOccupied(position.x, position.y, actorId),
     });
     return plan.accepted ? plan.position : null;
-  }, [calculateDistance, getFormationTerrainAt, isHexOccupied]);
+  }, [
+    activeBattlefieldTraversalMap,
+    calculateDistance,
+    getFormationTerrainAt,
+    getStructureAwareCombatNeighbors,
+    isHexOccupied,
+  ]);
 
   const openFormationCommandChoice = useCallback(() => {
     const roster = fightersRef.current || fighters;
@@ -25978,6 +26305,90 @@ function CombatPage({ characters = [] }) {
     const priorPosition = getCombatantGridPosition(
       positionsRef.current?.[combatantId] || combatant,
     );
+    const normalizedTraversalAction = movementActionName.toLowerCase();
+    const plannedTraversalMode = /fly|flight/.test(normalizedTraversalAction)
+      ? "flight"
+      : /climb/.test(normalizedTraversalAction)
+        ? "climb"
+        : /charge/.test(normalizedTraversalAction)
+          ? "charge"
+          : /run|sprint|dash|panic/.test(normalizedTraversalAction)
+            ? "run"
+            : "walk";
+    const traversalSnapshot = movementInfo?.traversalPlan?.executionSnapshot || null;
+    if (traversalSnapshot) {
+      const snapshotValidation = validateBattlefieldTraversalExecutionSnapshot({
+        snapshot: traversalSnapshot,
+        mapDefinition: activeBattlefieldTraversalMap,
+        actorId: combatantId,
+        from: priorPosition,
+        to: newPosition,
+        movementMode: plannedTraversalMode,
+      });
+      if (!snapshotValidation.accepted) {
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.MOVEMENT,
+          eventType: "stale-movement-plan-rejected",
+          level: "warning",
+          type: "warning",
+          actorId: combatantId,
+          source: movementInfo?.source || movementActionName,
+          message:
+            `stale movement plan rejected: actor=${combatant?.name || combatantId} ` +
+            `mode=${plannedTraversalMode} reason=${snapshotValidation.reason}`,
+          data: {
+            ...snapshotValidation,
+            plannedFrom: traversalSnapshot.from,
+            actualFrom: priorPosition,
+            plannedTo: traversalSnapshot.to,
+            requestedTo: newPosition,
+          },
+        }, "warning");
+        return false;
+      }
+    }
+    // 8C-8C.3B structure-aware movement preflight: no combat side effects before admission.
+    if (combatant && priorPosition && newPosition) {
+      const structureAdmission = admitStructureAwareCombatMovement({
+        mapDefinition: arenaEnvironment || {},
+        index: structureSpatialIndex,
+        actor: combatant,
+        from: priorPosition,
+        to: newPosition,
+        path: movementInfo?.path || null,
+        movementMode: movementInfo?.movementMode || movementInfo?.mode || movementActionName,
+      });
+      if (!structureAdmission.accepted) {
+        const structureMovementSource = movementInfo?.source || movementInfo?.action || "movement";
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.MOVEMENT,
+          eventType: "structure-traversal-rejected",
+          level: "warning",
+          type: "warning",
+          actorId: combatantId,
+          source: structureMovementSource,
+          message: `structure traversal rejected: actor=${combatant.name || combatantId} mode=${movementActionName} reason=${structureAdmission.reason} obstacle=${structureAdmission.obstacle || "structure"}`,
+          data: {
+            accepted: false,
+            reason: structureAdmission.reason,
+            obstacle: structureAdmission.obstacle || null,
+            blockerId: structureAdmission.blockerId || null,
+            blockerKind: structureAdmission.blockerKind || null,
+            blockerMaterial: structureAdmission.blockerMaterial || null,
+            blockedStepIndex: structureAdmission.blockedStepIndex,
+            from: structureAdmission.from || priorPosition,
+            to: structureAdmission.to || newPosition,
+            path: structureAdmission.path || null,
+            requiresClimb: structureAdmission.requiresClimb === true,
+            canTraverseWithClimb: structureAdmission.canTraverseWithClimb === true,
+            requiredClimbHeightFeet: structureAdmission.requiredClimbHeightFeet || 0,
+          },
+        }, "warning");
+        return false;
+      }
+    }
 
     // Weapon measure is movement authority, not a cosmetic attack bonus. A
     // longer weapon stops at its preferred measure, while a shorter weapon
@@ -26370,6 +26781,91 @@ function CombatPage({ characters = [] }) {
         );
       }
     }
+    let terrainTraversal = null;
+    const normalizedMovementAction = movementActionName.toLowerCase();
+    const formationMovement = [
+      FORMATION_COMMANDS.CLOSE_RANKS,
+      FORMATION_COMMANDS.WITHDRAW_IN_ORDER,
+      FORMATION_COMMANDS.REFORM_LINE,
+      FORMATION_COMMANDS.ANCHOR_POSITION,
+    ].includes(normalizedMovementAction);
+    const terrainMovementMode = plannedTraversalMode;
+    const terrainTraversalEligible = Boolean(
+      activeBattlefieldTraversalMap &&
+      movementInfo &&
+      combatant &&
+      priorPosition &&
+      newPosition &&
+      movementAction !== "TELEPORT" &&
+      movementInfo?.ignoreTerrainTraversal !== true &&
+      (movementInfo?.forced !== true || formationMovement)
+    );
+    if (terrainTraversalEligible) {
+      const terrainBudgetFeet = movementInfo?.ignoreMovementBudget === true
+        ? Number.POSITIVE_INFINITY
+        : getCanonicalMovementActionBudgetFt(combatant, terrainMovementMode);
+      const occupied = new Set(
+        Object.entries(positionsRef.current || {})
+          .filter(([candidateId]) => String(candidateId) !== String(combatantId))
+          .map(([, position]) => `${position.x},${position.y}`),
+      );
+      const suppliedPath = Array.isArray(movementInfo?.path) ? movementInfo.path : [];
+      if (suppliedPath.length > 0) {
+        terrainTraversal = resolveBattlefieldPathTraversal({
+          mapDefinition: activeBattlefieldTraversalMap,
+          actorId: combatantId,
+          from: priorPosition,
+          to: newPosition,
+          path: suppliedPath,
+          movementMode: terrainMovementMode,
+          climbAuthorized: movementInfo?.climbAuthorized === true,
+          swimAuthorized: movementInfo?.swimAuthorized === true,
+          waterProfile: movementInfo?.waterProfile || combatant,
+          traversalLayer: movementInfo?.traversalLayer || "lower",
+          maxDistanceFeet: terrainBudgetFeet,
+        });
+      }
+      if (!terrainTraversal?.accepted) {
+        terrainTraversal = findBattlefieldTraversalPath({
+          mapDefinition: activeBattlefieldTraversalMap,
+          actorId: combatantId,
+          from: priorPosition,
+          destination: newPosition,
+          movementMode: terrainMovementMode,
+          climbAuthorized: movementInfo?.climbAuthorized === true,
+          swimAuthorized: movementInfo?.swimAuthorized === true,
+          waterProfile: movementInfo?.waterProfile || combatant,
+          traversalLayer: movementInfo?.traversalLayer || "lower",
+          maxDistanceFeet: terrainBudgetFeet,
+          occupied,
+          isPositionLegal: (position) => isValidPosition(position.x, position.y),
+          allowOccupiedDestination: movementInfo?.allowOccupiedDestination === true,
+        });
+      }
+      if (!terrainTraversal?.accepted || !terrainTraversal?.exact) {
+        addLog(
+          `${combatant.name} cannot ${terrainMovementMode} to (${newPosition.x}, ${newPosition.y}): ${describeBattlefieldTraversalFailure(terrainTraversal?.reason)}.`,
+          "warning",
+        );
+        addLog?.({
+          audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+          channel: COMBAT_LOG_CHANNELS.MOVEMENT,
+          eventType: "battlefield-traversal-rejected",
+          level: "warning",
+          type: "debug",
+          actorId: combatantId,
+          source: movementInfo?.source || movementActionName,
+          message: `battlefield traversal rejected: actor=${combatant.name || combatantId} mode=${terrainMovementMode} reason=${terrainTraversal?.reason || "no-path"}`,
+          data: terrainTraversal || null,
+        }, "debug");
+        return false;
+      }
+      movementInfo = {
+        ...movementInfo,
+        path: terrainTraversal.path,
+        terrainStaminaCost: Math.max(0, Number(terrainTraversal.staminaCost) || 0),
+      };
+    }
     if (commitsImmediately && combatant && priorPosition && newPosition) {
       const movementTurn = getAuthoritativeInitiativeTurnSnapshot(combatantId);
       const movementSource = movementInfo?.source || movementInfo?.action || "movement";
@@ -26382,7 +26878,9 @@ function CombatPage({ characters = [] }) {
         movementSource,
         `${Number(newPosition.x)},${Number(newPosition.y)}`,
       ].join(":");
-      const committedDistanceFt = calculateDistance(priorPosition, newPosition);
+      const committedDistanceFt = terrainTraversal?.accepted
+        ? terrainTraversal.effectiveDistanceFeet
+        : calculateDistance(priorPosition, newPosition);
       const movementResult = commitCanonicalMovement({
         registry: canonicalMovementRegistryRef.current,
         actor: combatant,
@@ -26394,6 +26892,7 @@ function CombatPage({ characters = [] }) {
         movementMode: movementActionName,
         actionCost: movementInfo?.actionCost ?? 1,
         staminaCost: movementInfo?.staminaCost ?? null,
+        terrainStaminaCost: movementInfo?.terrainStaminaCost ?? 0,
         source: movementSource,
         executionKey: movementExecutionKey,
         forced: movementInfo?.forced === true,
@@ -26734,6 +27233,9 @@ function CombatPage({ characters = [] }) {
     isHexOccupied,
     scheduleWeaponControlResponse,
     spendCombatStamina,
+    activeBattlefieldTraversalMap,
+    arenaEnvironment,
+    structureSpatialIndex,
   ]);
 
   useEffect(() => {
@@ -28810,8 +29312,18 @@ function CombatPage({ characters = [] }) {
           calculateDistanceFeet: calculateDistance,
           currentRound: meleeRoundRef.current,
           terrainAt: getFormationTerrainAt,
-          getNeighbors: getHexNeighbors,
-          isPositionLegal: (position) => isValidPosition(position.x, position.y),
+          getNeighbors: getStructureAwareCombatNeighbors,
+          isPositionLegal: (position) => {
+            if (!isValidPosition(position.x, position.y)) return false;
+            const actorPosition = positionsRef.current?.[effectiveAttacker.id] || effectiveAttacker.position;
+            if (!activeBattlefieldTraversalMap || !actorPosition) return true;
+            return resolveBattlefieldTraversalStep({
+              mapDefinition: activeBattlefieldTraversalMap,
+              from: actorPosition,
+              to: position,
+              movementMode: "walk",
+            }).accepted;
+          },
           isOccupied: (position, actorId) => isHexOccupied(position.x, position.y, actorId),
         });
       }
@@ -36254,6 +36766,7 @@ function CombatPage({ characters = [] }) {
     fighters,
     positions,
     combatTerrain,
+    activeBattlefieldTraversalMap,
     combatActive,
     meleeRound,
     turnCounter,
@@ -36288,6 +36801,7 @@ function CombatPage({ characters = [] }) {
     runHorrorAndMorale,
     resolveEnemyEffectiveAttack,
     handlePositionChange,
+    getStructureAwareCombatNeighbors,
     isHexOccupied,
     generateCryptoId,
     createAttackActionGrant,
@@ -36308,6 +36822,7 @@ function CombatPage({ characters = [] }) {
     createTurnEndingExhaustionKey,
     rollDeterministicClock12,
     commitFighters,
+    spendCombatStamina,
     applyIncapacitationCondition,
     settings.useInsanityTrauma,
     settings.useMoraleRouting,
@@ -36403,6 +36918,21 @@ function CombatPage({ characters = [] }) {
   const handleChargeAttack = useCallback((attacker, target) => {
     const attackerPos = positions?.[attacker?.id];
     const defenderPos = positions?.[target?.id];
+    if (attackerPos && defenderPos) {
+      const structureBlock = getCombatMovementStructureBlock({
+        mapDefinition: arenaEnvironment || combatTerrain || {},
+        index: structureSpatialIndex,
+        from: attackerPos,
+        to: defenderPos,
+        actorCanClimb: attacker?.moveCaps?.canClimb === true,
+      });
+      if (structureBlock.blocked) {
+        const obstacle = describeStructureSpatialBlock(structureBlock.blocker);
+        addLog(`🚧 ${attacker?.name || "Fighter"} cannot charge through ${obstacle}.`, "warning");
+        return;
+      }
+    }
+
     const terrainCheck = canChargeInTerrain(combatTerrain, attacker, positions);
     const momentumMods = getChargeMomentumModifiers(attacker, target, positions);
     const chargePreview = executeChargeAttack(
@@ -36442,6 +36972,8 @@ function CombatPage({ characters = [] }) {
     setPositions,
     setFighters,
     positionsRef,
+    arenaEnvironment,
+    structureSpatialIndex,
   ]);
 
   // Handle attack with movement (move then attack in one action)
@@ -36461,6 +36993,28 @@ function CombatPage({ characters = [] }) {
   // Handle selecting a movement destination (clicking a hex / confirming move)
   const handleMoveSelectAction = useCallback((attacker, destinationHex) => {
     if (!attacker || !destinationHex) return;
+
+    const fromPosition = positions?.[attacker.id];
+    if (fromPosition) {
+      const distanceFeet = calculateDistance(fromPosition, destinationHex);
+      if (Number.isFinite(distanceFeet) && distanceFeet <= 5.5) {
+        const structureBlock = getCombatMovementStructureBlock({
+          mapDefinition: arenaEnvironment || combatTerrain || {},
+          index: structureSpatialIndex,
+          from: fromPosition,
+          to: destinationHex,
+          actorCanClimb: attacker?.moveCaps?.canClimb === true,
+        });
+        if (structureBlock.blocked) {
+          const obstacle = describeStructureSpatialBlock(structureBlock.blocker);
+          const climbNote = structureBlock.canTraverseWithClimb
+            ? " Use a climb action to cross it."
+            : "";
+          addLog(`🚧 Movement blocked by ${obstacle}.${climbNote}`, "warning");
+          return;
+        }
+      }
+    }
     handleMoveSelectHandler(destinationHex.x, destinationHex.y, {
       movementMode,
       selectedMovementFighter: attacker.id,
@@ -36500,7 +37054,10 @@ function CombatPage({ characters = [] }) {
     setTemporaryHexSharing,
     positionsRef,
     attackRef,
-    dfocusatchEngineCommand, // Add to dependencies
+    dfocusatchEngineCommand,
+    arenaEnvironment,
+    combatTerrain,
+    structureSpatialIndex,
   ]);
 
   const isManualMovementHexValid = useCallback(
@@ -37190,7 +37747,7 @@ function CombatPage({ characters = [] }) {
               threatPositions,
               maxSteps: 3,
               isHexOccupied: (x, y) => isOccupiedForMove(x, y, latestPlayer.id),
-              getHexNeighbors,
+              getHexNeighbors: getStructureAwareCombatNeighbors,
               isValidPosition: (x, y) => isValidPosition(x, y, combatTerrain),
               calculateDistance,
               gridWidth: GRID_CONFIG.GRID_WIDTH,
@@ -37849,30 +38406,49 @@ function CombatPage({ characters = [] }) {
       };
       const movementMode = "walk";
       const movementBudgetFeet = getCanonicalMovementActionBudgetFt(liveFighter, movementMode);
-      const maximumSteps = Math.max(0, Math.floor(movementBudgetFeet / 5));
-      if (maximumSteps <= 0) {
+      if (movementBudgetFeet <= 0) {
         addLog(`${formatCombatActorLabel(liveFighter, { roster: fightersRef.current ?? fighters ?? [] })} has no walking movement remaining this round.`, "info");
         return false;
       }
       const occupied = new Set(Object.entries(positionsRef.current || {})
         .filter(([candidateId]) => String(candidateId) !== String(fighterLike.id))
         .map(([, position]) => `${position.x},${position.y}`));
-      const fullPath = buildTacticalPath({
-        from: origin,
-        destination: { x: Number(destination.x), y: Number(destination.y) },
-        occupied,
-        isHexLegal: (hex) => isValidPosition(hex.x, hex.y),
-      });
-      const committedPath = fullPath.slice(0, maximumSteps).map((step) => ({ ...step }));
+      const terrainPlan = activeBattlefieldTraversalMap
+        ? findBattlefieldTraversalPath({
+            mapDefinition: activeBattlefieldTraversalMap,
+            actorId: fighterLike.id,
+            from: origin,
+            destination: requestedDestination,
+            movementMode,
+            maxDistanceFeet: movementBudgetFeet,
+            occupied,
+            isPositionLegal: (position) => isValidPosition(position.x, position.y),
+            allowPartial: true,
+          })
+        : null;
+      const fullPath = terrainPlan?.accepted
+        ? terrainPlan.path
+        : buildTacticalPath({
+            from: origin,
+            destination: requestedDestination,
+            occupied,
+            isHexLegal: (hex) => isValidPosition(hex.x, hex.y),
+          });
+      const committedPath = terrainPlan?.accepted
+        ? fullPath.map((step) => ({ ...step }))
+        : fullPath.slice(0, Math.max(0, Math.floor(movementBudgetFeet / 5))).map((step) => ({ ...step }));
       const nextPosition = committedPath.at(-1);
       if (!nextPosition) return false;
-      const actualDistanceFeet = committedPath.length * 5;
+      const actualDistanceFeet = terrainPlan?.accepted
+        ? terrainPlan.effectiveDistanceFeet
+        : committedPath.length * 5;
       const movementCommitted = handlePositionChange(fighterLike.id, nextPosition, {
         action: "WALK",
         actionCost: MOVEMENT_ACTIONS.MOVE.actionCost,
         description: `${source}; ${actualDistanceFeet} ft tactical path`,
         persistImmediately: true,
         path: committedPath,
+        traversalPlan: terrainPlan?.accepted ? terrainPlan : null,
         source,
         trackRoundMovement: true,
       });
@@ -39023,7 +39599,7 @@ function CombatPage({ characters = [] }) {
       GRID_CONFIG,
       MOVEMENT_RATES,
       MOVEMENT_ACTIONS,
-      getHexNeighbors,
+      getHexNeighbors: getStructureAwareCombatNeighbors,
       isValidPosition,
       findBeePath,
       getTargetsInLine,
@@ -39485,6 +40061,8 @@ function CombatPage({ characters = [] }) {
     positions,
     combatTerrain,
     arenaEnvironment,
+    activeBattlefieldTraversalMap,
+    getStructureAwareCombatNeighbors,
     meleeRound,
     turnCounter,
     combatActive,
@@ -40926,7 +41504,7 @@ function CombatPage({ characters = [] }) {
         validateWeaponRange,
         handlePositionChange: handleEnemyAIPositionChange,
         isHexOccupied,
-        getHexNeighbors,
+        getHexNeighbors: getStructureAwareCombatNeighbors,
         isValidPosition,
         findRetreatDestination,
         // Healing / support
@@ -42082,7 +42660,7 @@ function CombatPage({ characters = [] }) {
               threatPositions,
               maxSteps: 3,
               isHexOccupied: (x, y) => isOccupiedForMove(x, y, liveEnemy.id),
-              getHexNeighbors,
+              getHexNeighbors: getStructureAwareCombatNeighbors,
               isValidPosition: (x, y) => isValidPosition(x, y, combatTerrain),
               calculateDistance,
               gridWidth: GRID_CONFIG.GRID_WIDTH,
@@ -42873,6 +43451,15 @@ function CombatPage({ characters = [] }) {
               maxSteps: retreatSteps,
               enemyId: enemy.id,
               isHexOccupied,
+              getNeighborPositions: (x, y) => getCanonicalCombatTraversalNeighbors(
+                x,
+                y,
+                {
+                  actor: enemy,
+                  movementMode: "run",
+                  waterProfile: enemy,
+                },
+              ),
             });
           }
 
@@ -44048,6 +44635,20 @@ function CombatPage({ characters = [] }) {
           : approachMovementType === "MOVE"
             ? "walks"
             : "runs";
+        const approachTraversalMode = approachMovementType === "FLY"
+          ? "flight"
+          : approachMovementType === "MOVE"
+            ? "walk"
+            : "run";
+        const getApproachTraversalNeighbors = (x, y) => getCanonicalCombatTraversalNeighbors(
+          x,
+          y,
+          {
+            actor: enemy,
+            movementMode: approachTraversalMode,
+            waterProfile: enemy,
+          },
+        );
         const approachMaxFeet = getMaxMoveFtThisAction(
           enemy,
           approachMovementType === "FLY" ? "FLY" : approachMovementType === "MOVE" ? "MOVE" : "Run",
@@ -44116,7 +44717,7 @@ function CombatPage({ characters = [] }) {
             positions: livePositions,
             currentPosition: currentPos,
             maxHexes: approachMaxHexes,
-            getNeighbors: getHexNeighbors,
+            getNeighbors: getApproachTraversalNeighbors,
             isLegalCenter: isLegalApproachCenter,
             getDistance: calculateDistance,
             isHostile: (candidate) => canSelectHostileCombatTarget(
@@ -44152,7 +44753,41 @@ function CombatPage({ characters = [] }) {
           }, "warning");
           throw approachPlannerResult.error || new Error(approachPlannerResult.reason);
         }
-        const selectedApproachPlan = approachPlannerResult.plan;
+        let selectedApproachPlan = approachPlannerResult.plan;
+        if (activeBattlefieldTraversalMap && selectedApproachPlan?.position) {
+          const terrainOccupied = new Set(
+            Object.entries(livePositions || {})
+              .filter(([candidateId]) => String(candidateId) !== String(enemy.id))
+              .map(([, position]) => `${position.x},${position.y}`),
+          );
+          const canonicalApproachTraversal = findBattlefieldTraversalPath({
+            mapDefinition: activeBattlefieldTraversalMap,
+            actorId: enemy.id,
+            from: currentPos,
+            destination: selectedApproachPlan.position,
+            movementMode: approachTraversalMode,
+            maxDistanceFeet: getCanonicalMovementActionBudgetFt(enemy, approachTraversalMode),
+            occupied: terrainOccupied,
+            isPositionLegal: (position) => isValidPosition(position.x, position.y),
+            allowPartial: true,
+            waterProfile: enemy,
+          });
+          selectedApproachPlan = canonicalApproachTraversal?.accepted
+            ? {
+                ...selectedApproachPlan,
+                position: { ...canonicalApproachTraversal.destination },
+                path: [{ ...currentPos }, ...canonicalApproachTraversal.path.map((step) => ({ ...step }))],
+                traversalPlan: canonicalApproachTraversal,
+              }
+            : {
+                ...selectedApproachPlan,
+                type: "hold",
+                position: null,
+                path: [],
+                invalidReason: canonicalApproachTraversal?.reason || "no-legal-terrain-path",
+                traversalPlan: canonicalApproachTraversal,
+              };
+        }
         addLog({
           audience: "developer",
           channel: "movement",
@@ -44182,7 +44817,7 @@ function CombatPage({ characters = [] }) {
             target,
             targetPosition: targetPos,
             maxHexes: approachMaxHexes,
-            getNeighbors: getHexNeighbors,
+            getNeighbors: getApproachTraversalNeighbors,
             isLegalCenter: isLegalApproachCenter,
             getDistance: calculateDistance,
             canAttackFrom: (position, candidate, candidatePosition) => {
@@ -44280,7 +44915,7 @@ function CombatPage({ characters = [] }) {
           },
           move: (destination, plan) => {
             approachDistanceMoved = calculateDistance(currentPos, destination);
-            handlePositionChange(enemy.id, destination, {
+            const structureMovementAccepted1 = handlePositionChange(enemy.id, destination, {
               action: approachMovementType,
               actionCost: MOVEMENT_ACTIONS.MOVE.actionCost,
               description: approachMovementType === "FLY"
@@ -44288,9 +44923,24 @@ function CombatPage({ characters = [] }) {
                 : `Enemy closing movement to (${destination.x}, ${destination.y})`,
               persistImmediately: true,
               path: Array.isArray(plan?.path) ? plan.path : null,
+              traversalPlan: plan?.traversalPlan || null,
               source: approachFinalizerSource,
               trackRoundMovement: true,
             });
+            if (structureMovementAccepted1 === false) {
+              addLog?.({
+                audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+                channel: COMBAT_LOG_CHANNELS.MOVEMENT,
+                eventType: "enemy-movement-commit-rejected",
+                level: "warning",
+                type: "warning",
+                actorId: enemy.id,
+                source: "structure-aware-transactional-movement",
+                message: `enemy movement commit rejected: actor=${enemy.name || enemy.id} destination=(${destination.x},${destination.y})`,
+                data: { accepted: false, destination: destination },
+              }, "warning");
+              return false;
+            }
             enemyClosingMovementHistoryRef.current.set(enemy.id, {
               previousPosition: { ...currentPos },
               selectedPosition: { ...destination },
@@ -45038,12 +45688,26 @@ function CombatPage({ characters = [] }) {
         closingMovementHistory?.selectedPosition?.y === currentPos.y
         ? closingMovementHistory.previousPosition
         : null;
+      const closingTraversalMode = /fly|flight/i.test(String(movementType))
+        ? "flight"
+        : /run|sprint|dash|panic/i.test(String(movementType))
+          ? "run"
+          : "walk";
+      const getClosingTraversalNeighbors = (x, y) => getCanonicalCombatTraversalNeighbors(
+        x,
+        y,
+        {
+          actor: enemy,
+          movementMode: closingTraversalMode,
+          waterProfile: enemy,
+        },
+      );
       const findBestReachableClosingHex = (maxHexes) => {
         return selectEnemyClosingMovementHex({
           currentPosition: currentPos,
           targetPosition: targetPos,
           maxHexes,
-          getNeighbors: getHexNeighbors,
+          getNeighbors: getClosingTraversalNeighbors,
           isLegalCenter: isLegalClosingMovementCenter,
           getDistance: calculateDistance,
           previousPosition,
@@ -45057,7 +45721,7 @@ function CombatPage({ characters = [] }) {
             positions: livePositions,
             currentPosition: currentPos,
             maxHexes,
-            getNeighbors: getHexNeighbors,
+            getNeighbors: getClosingTraversalNeighbors,
             isLegalCenter: isLegalClosingMovementCenter,
             getDistance: calculateDistance,
             isHostile: (candidate) => canSelectHostileCombatTarget(
@@ -45090,6 +45754,42 @@ function CombatPage({ characters = [] }) {
           };
         }
       };
+      const canonicalizeEnemyMovementPlan = (plan, movementMode = closingTraversalMode) => {
+        if (!activeBattlefieldTraversalMap || !plan?.position) return plan;
+        const occupied = new Set(
+          Object.entries(livePositions || {})
+            .filter(([candidateId]) => String(candidateId) !== String(enemy.id))
+            .map(([, position]) => `${position.x},${position.y}`),
+        );
+        const traversalPlan = findBattlefieldTraversalPath({
+          mapDefinition: activeBattlefieldTraversalMap,
+          actorId: enemy.id,
+          from: currentPos,
+          destination: plan.position,
+          movementMode,
+          maxDistanceFeet: getCanonicalMovementActionBudgetFt(enemy, movementMode),
+          occupied,
+          isPositionLegal: (position) => isValidPosition(position.x, position.y),
+          allowPartial: true,
+          waterProfile: enemy,
+        });
+        if (!traversalPlan?.accepted) {
+          return {
+            ...plan,
+            type: "hold",
+            position: null,
+            path: [],
+            invalidReason: traversalPlan?.reason || "no-legal-terrain-path",
+            traversalPlan,
+          };
+        }
+        return {
+          ...plan,
+          position: { ...traversalPlan.destination },
+          path: [{ ...currentPos }, ...traversalPlan.path.map((step) => ({ ...step }))],
+          traversalPlan,
+        };
+      };
       const commitClosingMoveOrPass = (
         maxHexes,
         reason = "enemy-closing-move",
@@ -45099,8 +45799,18 @@ function CombatPage({ characters = [] }) {
           "enemy closing move: target unreachable this action; choosing best reachable hex",
           "info"
         );
-        const movementPlan = selectedMovementPlan || chooseLegacyMovementPlan(maxHexes);
-        const selection = movementPlan?.rankedTargets?.[0]?.approach ||
+        const movementPlan = canonicalizeEnemyMovementPlan(
+          selectedMovementPlan || chooseLegacyMovementPlan(maxHexes),
+        );
+        const selection = movementPlan?.invalidReason && !movementPlan?.position
+          ? {
+              position: null,
+              currentDistance,
+              bestCandidateDistance: null,
+              candidateCount: 0,
+              reason: movementPlan.invalidReason,
+            }
+          : movementPlan?.rankedTargets?.[0]?.approach ||
           (selectedMovementPlan
             ? {
                 position: selectedMovementPlan.position,
@@ -45138,11 +45848,27 @@ function CombatPage({ characters = [] }) {
           previousPosition: { ...currentPos },
           selectedPosition: { ...closingHex },
         });
-        handlePositionChange(enemy.id, closingHex, {
+        const structureMovementAccepted2 = handlePositionChange(enemy.id, closingHex, {
           action: movementType,
           actionCost: MOVEMENT_ACTIONS.MOVE.actionCost,
           description: `Closing move to (${closingHex.x}, ${closingHex.y})`,
+          path: Array.isArray(movementPlan?.path) ? movementPlan.path : null,
+          traversalPlan: movementPlan?.traversalPlan || null,
         });
+        if (structureMovementAccepted2 === false) {
+          addLog?.({
+            audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+            channel: COMBAT_LOG_CHANNELS.MOVEMENT,
+            eventType: "enemy-movement-commit-rejected",
+            level: "warning",
+            type: "warning",
+            actorId: enemy.id,
+            source: "structure-aware-transactional-movement",
+            message: `enemy movement commit rejected: actor=${enemy.name || enemy.id} destination=(${closingHex.x},${closingHex.y})`,
+            data: { accepted: false, destination: closingHex },
+          }, "warning");
+          return false;
+        }
         commitFighters(prev => prev.map(f =>
           f.id === enemy.id
             ? { ...f, remainingActions: Math.max(0, (Number(f.remainingActions ?? 0) || 0) - 1) }
@@ -45161,14 +45887,20 @@ function CombatPage({ characters = [] }) {
         executionMovementType,
         reason = "enemy-closing-movement",
       ) => {
-        const validation = validateEnemyMovementPlan(selectedPlan, {
+        const executionTraversalMode = /fly|flight/i.test(String(executionMovementType))
+          ? "flight"
+          : /run|sprint|dash|panic/i.test(String(executionMovementType))
+            ? "run"
+            : "walk";
+        const canonicalPlan = canonicalizeEnemyMovementPlan(selectedPlan, executionTraversalMode);
+        const validation = validateEnemyMovementPlan(canonicalPlan, {
           currentPosition: currentPos,
           isLegalCenter: isLegalClosingMovementCenter,
         });
         const executablePlan = validation.valid
-          ? selectedPlan
+          ? canonicalPlan
           : {
-              ...selectedPlan,
+              ...canonicalPlan,
               type: "hold",
               position: null,
               invalidReason: validation.reason,
@@ -45190,15 +45922,30 @@ function CombatPage({ characters = [] }) {
           },
           move: (destination, plan) => {
             distanceMoved = calculateDistance(currentPos, destination);
-            handlePositionChange(enemy.id, destination, {
+            const terrainCommitted = handlePositionChange(enemy.id, destination, {
               action: executionMovementType,
               actionCost: MOVEMENT_ACTIONS.MOVE.actionCost,
               description: `Enemy closing movement to (${destination.x}, ${destination.y})`,
               persistImmediately: true,
               path: Array.isArray(plan?.path) ? plan.path : null,
+              traversalPlan: plan?.traversalPlan || null,
               source: finalizerSource,
               trackRoundMovement: true,
             });
+            if (terrainCommitted === false) {
+              addLog?.({
+                audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+                channel: COMBAT_LOG_CHANNELS.MOVEMENT,
+                eventType: "enemy-movement-commit-rejected",
+                level: "warning",
+                type: "warning",
+                actorId: enemy.id,
+                source: "structure-aware-transactional-movement",
+                message: `enemy movement commit rejected: actor=${enemy.name || enemy.id} destination=(${destination.x},${destination.y})`,
+                data: { accepted: false, destination: destination },
+              }, "warning");
+              return false;
+            }
             enemyClosingMovementHistoryRef.current.set(enemy.id, {
               previousPosition: { ...currentPos },
               selectedPosition: { ...destination },
@@ -45411,11 +46158,25 @@ function CombatPage({ characters = [] }) {
             if (fallbackMove) {
               addLog(`fallback approach hex selected: (${fallbackMove.x},${fallbackMove.y})`, "info");
               addLog(`${enemy.name} moves as close as possible instead.`, "info");
-              handlePositionChange(enemy.id, fallbackMove, {
+              const structureMovementAccepted4 = handlePositionChange(enemy.id, fallbackMove, {
                 action: movementType,
                 actionCost: MOVEMENT_ACTIONS.MOVE.actionCost,
                 description: `Blocked approach fallback to (${fallbackMove.x}, ${fallbackMove.y})`,
               });
+              if (structureMovementAccepted4 === false) {
+                addLog?.({
+                  audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+                  channel: COMBAT_LOG_CHANNELS.MOVEMENT,
+                  eventType: "enemy-movement-commit-rejected",
+                  level: "warning",
+                  type: "warning",
+                  actorId: enemy.id,
+                  source: "structure-aware-transactional-movement",
+                  message: `enemy movement commit rejected: actor=${enemy.name || enemy.id} destination=(${fallbackMove.x},${fallbackMove.y})`,
+                  data: { accepted: false, destination: fallbackMove },
+                }, "warning");
+                return false;
+              }
               commitFighters(prev => prev.map(f =>
                 f.id === enemy.id
                   ? { ...f, remainingActions: Math.max(0, (Number(f.remainingActions ?? 0) || 0) - 1) }
@@ -46636,6 +47397,9 @@ function CombatPage({ characters = [] }) {
     commitFighters,
     combatTerrain,
     arenaEnvironment,
+    activeBattlefieldTraversalMap,
+    getCanonicalCombatTraversalNeighbors,
+    getStructureAwareCombatNeighbors,
     scheduleEndTurn,
     applyHealingToFighter,
     applyOngoingCarryStaminaDrain,

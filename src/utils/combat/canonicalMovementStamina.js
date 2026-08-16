@@ -49,6 +49,7 @@ export function commitCanonicalMovement({
   movementMode = "move",
   actionCost = 1,
   staminaCost = null,
+  terrainStaminaCost = 0,
   source = "movement",
   executionKey,
   forced = false,
@@ -68,9 +69,11 @@ export function commitCanonicalMovement({
     };
   }
   const resolvedDistance = Math.max(0, Number(distanceFt) || 0);
-  const resolvedCost = staminaCost == null
+  const baseStaminaCost = staminaCost == null
     ? calculateCanonicalMovementStaminaCost({ actor, distanceFt: resolvedDistance, movementMode, forced })
     : Math.max(0, Number(staminaCost) || 0);
+  const resolvedTerrainStaminaCost = Math.max(0, Number(terrainStaminaCost) || 0);
+  const resolvedCost = baseStaminaCost + resolvedTerrainStaminaCost;
   const base = {
     actorId,
     from: from ? { ...from } : null,
@@ -80,6 +83,8 @@ export function commitCanonicalMovement({
     movementMode: normalize(movementMode) || "move",
     actionCost,
     staminaCost: resolvedCost,
+    baseStaminaCost,
+    terrainStaminaCost: resolvedTerrainStaminaCost,
     source,
     executionKey,
     forced: Boolean(forced),
