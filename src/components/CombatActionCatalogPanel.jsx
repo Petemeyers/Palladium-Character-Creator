@@ -17,7 +17,7 @@ import { buildCombatActionCatalog } from "../utils/combatActionCatalog.js";
 
 const typeColor = (type) => {
   if (type === "attack") return "red";
-  if (type === "move" || type === "run" || type === "charge") return "blue";
+  if (type === "move" || type === "run" || type === "charge" || type === "climb") return "blue";
   if (type === "defend" || type === "block" || type === "evade") return "green";
   if (type === "recover") return "teal";
   if (type === "use-item") return "orange";

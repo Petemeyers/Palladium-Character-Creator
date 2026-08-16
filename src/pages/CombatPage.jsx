@@ -1,3 +1,5 @@
+import { getAdjacentClimbOptions, resolveClimbAttempt } from "../utils/combat/climbActionAuthority.js";
+import ClimbActionHandler from "../components/ClimbActionHandler.jsx";
 import React, { useState, useEffect, useCallback, useRef, startTransition, useMemo } from "react";
 import {
   admitStructureAwareCombatMovement,
@@ -13087,6 +13089,21 @@ function CombatPage({ characters = [] }) {
       return !currentSide || !fighterSide || fighterSide !== currentSide;
     });
   }, [commandActor, commandTurnBridge.activeActorId, fighters]);
+  const commandClimbOptions = useMemo(() => {
+    if (!commandActor || !activeBattlefieldTraversalMap) return [];
+    const actorId = commandActor.id || commandActor._id;
+    const origin = positions?.[actorId] || getCombatantGridPosition(commandActor);
+    if (!origin) return [];
+    return getAdjacentClimbOptions({
+      mapDefinition: activeBattlefieldTraversalMap,
+      actor: commandActor,
+      from: origin,
+      positions,
+      actorId,
+      getSkillPercentageFn: getSkillPercentage,
+      isPositionLegal: (position) => isValidPosition(position.x, position.y),
+    });
+  }, [activeBattlefieldTraversalMap, commandActor, positions]);
   const legacyManualTurnOrderGate = getLegacyManualTurnOrderGate({
     combatActive,
     combatOver: combatOverRef.current || combatEndCheckRef.current,
@@ -49752,6 +49769,202 @@ function CombatPage({ characters = [] }) {
     };
   }
 
+  function applyManualPublicClimb({ actorId, option } = {}) {
+    const currentCommandTurn = commandTurnEntry || manualPublicTurnOrder[manualPublicTurnIndex] || null;
+    if (!currentCommandTurn || String(actorId) !== String(currentCommandTurn.id)) {
+      const message = "Climb can only be used by the current turn combatant.";
+      addLog(commandBlockedLog({ action: "Climb", reason: message }), "warning");
+      return { ok: false, message };
+    }
+    if (!activeBattlefieldTraversalMap) {
+      const message = "No authored battlefield elevation map is active.";
+      addLog(commandBlockedLog({ action: "Climb", reason: message }), "warning");
+      return { ok: false, message };
+    }
+
+    const liveActor = (fightersRef.current || fighters).find((fighter) => String(fighter.id) === String(actorId));
+    const origin = positionsRef.current?.[actorId] || getCombatantGridPosition(liveActor);
+    if (!liveActor || !origin || !option?.to) {
+      const message = "Climb origin or destination is unavailable.";
+      addLog(commandBlockedLog({ action: "Climb", reason: message }), "warning");
+      return { ok: false, message };
+    }
+
+    const liveOptions = getAdjacentClimbOptions({
+      mapDefinition: activeBattlefieldTraversalMap,
+      actor: liveActor,
+      from: origin,
+      positions: positionsRef.current || positions,
+      actorId,
+      getSkillPercentageFn: getSkillPercentage,
+      isPositionLegal: (position) => isValidPosition(position.x, position.y),
+    });
+    const liveOption = liveOptions.find((candidate) => (
+      Number(candidate?.to?.x) === Number(option.to.x) &&
+      Number(candidate?.to?.y) === Number(option.to.y)
+    ));
+    if (!liveOption?.accepted || liveOption.enabled === false) {
+      const message = liveOption?.reason || "That cliff or wall is not a legal climb.";
+      addLog(commandBlockedLog({ action: "Climb", reason: message }), "warning");
+      return { ok: false, message };
+    }
+
+    const remainingActions = Number(currentCommandTurn.remainingActions ?? liveActor.remainingActions ?? 0);
+    if (remainingActions < liveOption.actionCost) {
+      const message = `Climb requires ${liveOption.actionCost} action${liveOption.actionCost === 1 ? "" : "s"}.`;
+      addLog(commandBlockedLog({ action: "Climb", reason: message }), "warning");
+      return { ok: false, message };
+    }
+
+    const currentStamina = Number(
+      liveActor.currentStamina ??
+      liveActor.combatStamina?.currentStamina ??
+      liveActor.combatStamina?.current ??
+      liveActor.stamina ??
+      0
+    );
+    if (Number.isFinite(currentStamina) && currentStamina < liveOption.totalStaminaCost) {
+      const message = `Climb requires ${liveOption.totalStaminaCost} stamina.`;
+      addLog(commandBlockedLog({ action: "Climb", reason: message }), "warning");
+      return { ok: false, message };
+    }
+
+    const actionSpend = spendAction(currentCommandTurn, liveOption.actionCost);
+    if (!actionSpend.ok || actionSpend.spent < liveOption.actionCost) {
+      const message = "Not enough actions remain for this climb.";
+      addLog(commandBlockedLog({ action: "Climb", reason: message }), "warning");
+      return { ok: false, message };
+    }
+
+    if (commandTurnBridge.source === "manual-public-turn-order") {
+      setManualPublicTurnOrder((current) => current.map((row, index) => (
+        index === manualPublicTurnIndex ? actionSpend.updated : row
+      )));
+    }
+
+    // Spend the action before resolving the check. The attempt consumes time
+    // whether the climber succeeds, slips, or falls.
+    commitFighters((current) => current.map((fighter) => (
+      String(fighter.id) === String(actorId)
+        ? { ...fighter, remainingActions: actionSpend.remainingActions }
+        : fighter
+    )));
+
+    const attempt = resolveClimbAttempt({
+      option: liveOption,
+      actor: liveActor,
+      roll: CryptoSecureDice.rollPercentile(),
+    });
+    const actorLabel = liveActor.name || "Combatant";
+    const surfaceLabel = liveOption.surface?.label || "surface";
+
+    addLog(
+      `${actorLabel} attempts to climb ${surfaceLabel}: percentile ${attempt.naturalRoll} vs ${attempt.targetPercent}%.`,
+      attempt.success ? "success" : "warning",
+    );
+
+    if (attempt.success) {
+      const movementCommitted = handlePositionChange(actorId, liveOption.to, {
+        action: "CLIMB",
+        actionCost: liveOption.actionCost,
+        description: `Climb ${liveOption.verticalFeet} ft ${surfaceLabel}`,
+        persistImmediately: true,
+        path: [liveOption.to],
+        source: "manual-climb",
+        trackRoundMovement: false,
+        climbAuthorized: true,
+        ignoreMovementBudget: true,
+        staminaCost: liveOption.baseStaminaCost,
+      });
+      if (movementCommitted === false) {
+        const message = `${actorLabel}'s climb could not be committed by movement authority.`;
+        addLog(message, "warning");
+        return { ok: false, attempt, option: liveOption, message };
+      }
+
+      const message =
+        `${actorLabel} climbs ${liveOption.uphill ? "up" : liveOption.downhill ? "down" : "across"} ` +
+        `${liveOption.verticalFeet} ft of ${surfaceLabel}. ` +
+        `Actions remaining: ${actionSpend.remainingActions}. Stamina cost: ${liveOption.totalStaminaCost}.`;
+      addLog(commandCompletedLog({
+        actor: liveActor,
+        action: "Climb",
+        detail: message,
+      }), "success");
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.MOVEMENT,
+        eventType: "climb-resolved",
+        level: "info",
+        type: "debug",
+        actorId,
+        source: "manual-climb",
+        message: `climb resolved: actor=${actorLabel} success=true roll=${attempt.naturalRoll} target=${attempt.targetPercent}`,
+        data: { attempt, option: liveOption },
+      }, "debug");
+      return { ok: true, attempt, option: liveOption, message };
+    }
+
+    const actionSpentActor =
+      (fightersRef.current || []).find((fighter) => String(fighter.id) === String(actorId)) ||
+      { ...liveActor, remainingActions: actionSpend.remainingActions };
+    const staminaSpend = spendCombatStamina({
+      fighter: actionSpentActor,
+      amount: liveOption.totalStaminaCost,
+      reason: "climb",
+      source: "manual-climb-failure",
+      executionKey: `climb-failure:${combatSessionRef.current}:${actorId}:${turnCounterRef.current}:${liveOption.to.x},${liveOption.to.y}`,
+      allowOverexertion: false,
+    });
+
+    if (attempt.falls && attempt.fallHeightFeet > 0) {
+      const afterStamina =
+        staminaSpend?.updated ||
+        (fightersRef.current || []).find((fighter) => String(fighter.id) === String(actorId)) ||
+        actionSpentActor;
+      const fallen = applyFallDamage(afterStamina, attempt.fallHeightFeet, addLog);
+      commitFighters((current) => current.map((fighter) => (
+        String(fighter.id) === String(actorId)
+          ? { ...fallen, remainingActions: actionSpend.remainingActions }
+          : fighter
+      )));
+      commitAuthoritativeCombatPosition(actorId, liveOption.to, "failed-climb-fall");
+      const message =
+        `${actorLabel} loses their hold while descending and falls ${attempt.fallHeightFeet} ft. ` +
+        `Actions remaining: ${actionSpend.remainingActions}.`;
+      addLog(message, "warning");
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.MOVEMENT,
+        eventType: "climb-fall-resolved",
+        level: "warning",
+        type: "debug",
+        actorId,
+        source: "manual-climb",
+        message: `climb fall resolved: actor=${actorLabel} fallHeightFeet=${attempt.fallHeightFeet}`,
+        data: { attempt, option: liveOption },
+      }, "debug");
+      return { ok: false, attempt, option: liveOption, fell: true, message };
+    }
+
+    const message =
+      `${actorLabel} fails to gain enough purchase on ${surfaceLabel} and remains in place. ` +
+      `Actions remaining: ${actionSpend.remainingActions}. Stamina cost: ${liveOption.totalStaminaCost}.`;
+    addLog(message, "warning");
+    addLog?.({
+      audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+      channel: COMBAT_LOG_CHANNELS.MOVEMENT,
+      eventType: "climb-resolved",
+      level: "warning",
+      type: "debug",
+      actorId,
+      source: "manual-climb",
+      message: `climb resolved: actor=${actorLabel} success=false roll=${attempt.naturalRoll} target=${attempt.targetPercent}`,
+      data: { attempt, option: liveOption },
+    }, "debug");
+    return { ok: false, attempt, option: liveOption, message };
+  }
+
   /**
    * Load a saved preset - restores fighters and positions directly.
    */
@@ -57697,6 +57910,17 @@ function CombatPage({ characters = [] }) {
                                 selectedCombatAction={activeSelectedCombatAction}
                                 manualTurnActive={commandManualTurnActive}
                                 onApplyPosture={applyManualPublicGuardPosture}
+                                onCommandLog={addLog}
+                              />
+                            )}
+                            {activeSelectedCombatAction?.type === "climb" && (
+                              <ClimbActionHandler
+                                actor={commandActor}
+                                currentTurnEntry={commandTurnEntry}
+                                selectedCombatAction={activeSelectedCombatAction}
+                                options={commandClimbOptions}
+                                manualTurnActive={commandManualTurnActive}
+                                onClimb={applyManualPublicClimb}
                                 onCommandLog={addLog}
                               />
                             )}

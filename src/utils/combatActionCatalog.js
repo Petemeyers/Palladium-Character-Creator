@@ -1,3 +1,4 @@
+import { getCanonicalSkillDisplayName } from "./skillSystem.js";
 import { validateAttackRange } from "./combatRangeValidation.js";
 import {
   formatRangeModifier,
@@ -103,6 +104,7 @@ const ACTION_CONTRACTS = Object.freeze({
   move: { rollRequired: false, executorIdentity: "canonical-movement-dispatcher", aiAvailable: true },
   run: { rollRequired: false, executorIdentity: "canonical-movement-dispatcher", aiAvailable: true },
   charge: { rollRequired: false, executorIdentity: "canonical-movement-dispatcher", aiAvailable: true },
+  climb: { rollRequired: true, executorIdentity: "canonical-climb-executor", aiAvailable: true },
   defend: { rollRequired: false, executorIdentity: "defend-action-handler", aiAvailable: true },
   block: { rollRequired: false, executorIdentity: "block-action-handler", aiAvailable: true },
   evade: { rollRequired: false, executorIdentity: "evade-action-handler", aiAvailable: true },
@@ -538,6 +540,22 @@ const buildMovementActions = ({ actor, currentTurnEntry, targetId }) => [
     targetRequired: true,
     targetId,
     previewSummary: "Fast advance; attack follow-through pending.",
+  }),
+  makeAction({
+    actor,
+    currentTurnEntry,
+    id: "climb",
+    name: "Climb",
+    type: "climb",
+    source: "canonical terrain traversal",
+    category: "Movement",
+    costActions: 1,
+    costStamina: 2,
+    previewSummary: "Cross one adjacent cliff or wall using the canonical Climbing check.",
+    metadata: {
+      skillName: "Climbing",
+      executor: "resolveClimbAttempt",
+    },
   }),
 ];
 
@@ -989,7 +1007,7 @@ const buildFoodProcessingActions = ({
 const buildSkillActions = ({ actor, currentTurnEntry }) =>
   getSkillCandidates({ actor })
     .map((skill, index) => {
-      const skillName = normalizeText(skill.name, "Skill");
+      const skillName = getCanonicalSkillDisplayName(normalizeText(skill.name, "Skill"));
       const skillId = normalizeText(skill.id, "");
       const skillSource = normalizeText(skill.source, "skill");
       const skillCategory = normalizeText(skill.category, "");

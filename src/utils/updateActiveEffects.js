@@ -1,3 +1,4 @@
+import CryptoSecureDice from "./cryptoDice.js";
 /**
  * Update Active Effects System
  * Manages temporary effects, buffs, and debuffs

@@ -15,7 +15,16 @@
 import { 
   getSkillPercentageAtLevel,
   getSecondarySkillBonus 
-} from '../data/skillProgression';
+} from '../data/skillProgression.js';
+
+export const CANONICAL_CLIMBING_SKILL_NAME = "Climbing";
+export const LEGACY_CLIMBING_SKILL_NAME = "Scale Walls";
+
+export function getCanonicalSkillDisplayName(skillName) {
+  return String(skillName ?? "")
+    .replace(/\bScaling Walls\b/gi, CANONICAL_CLIMBING_SKILL_NAME)
+    .replace(/\bScale Walls\b/gi, CANONICAL_CLIMBING_SKILL_NAME);
+}
 
 /**
  * Parse skill string to extract name, PROFESSION bonus, and metadata
@@ -58,6 +67,9 @@ export function normalizeSkillName(skillName) {
   
   // Handle common skill name variations to match skillProgression.js keys
   const variations = {
+    // Public canonical climbing name; legacy progression lookup remains compatible.
+    'Climbing': LEGACY_CLIMBING_SKILL_NAME,
+    'Scaling Walls': LEGACY_CLIMBING_SKILL_NAME,
     // Read/Write variations
     'Read/Write (Native Language)': 'Read/Write',
     'Read / Write': 'Read/Write',
@@ -197,7 +209,8 @@ export function lookupSkill(skillName, level = 1, iq = 0) {
   if (percentage === null) return null;
   
   return {
-    name: normalizedName,
+    name: getCanonicalSkillDisplayName(normalizedName),
+    lookupName: normalizedName,
     basePercentage: typeof percentage === 'object' ? percentage.first || percentage.create || 0 : percentage,
     level: level,
     category: 'general',
@@ -296,5 +309,6 @@ export default {
   getSkillPercentage,
   rollSkillCheck,
   normalizeSkillName,
+  getCanonicalSkillDisplayName,
 };
 
