@@ -10106,7 +10106,11 @@ function CombatPage({ characters = [] }) {
       }
     setShow3DView(false);
   }, [addLog, show3DView]);
-  const [showPhase0Modal, setShowPhase0Modal] = useState(false); // Phase 0 scene setup modal
+  const [showPhase0Modal, setShowPhase0Modal] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const params = new URLSearchParams(window.location.search || "");
+    return params.get("battlefieldTest") === "1";
+  }); // Phase 0 scene setup modal
   const [showDeploymentModal, setShowDeploymentModal] = useState(false); // Guided deployment overlay
   const [showPreBattleDuelist, setShowPreBattleDuelist] = useState(false); // Mobile-style setup flow
   const [setupMode, setSetupMode] = useState("manual");
@@ -50036,11 +50040,21 @@ function CombatPage({ characters = [] }) {
         setMapDefinition(null);
       }
     } else if (!skipPhase0 && combatTerrain && combatTerrain.mapType) {
-      // combatTerrain was already set from onComplete, use it (preserves mapType)
+      // combatTerrain was already set from Scene Setup. If it is a canonical
+      // Map Maker battlefield, preserve it as mapDefinition as well so both
+      // TacticalMap and HexArena3D receive the exact authored battlefield.
+      if (combatTerrain.id || combatTerrain.schemaVersion || combatTerrain.battlefieldMapId) {
+        setMapDefinition(combatTerrain);
+        battleMapStartLog = {
+          name: combatTerrain.name || combatTerrain.description || "Authored Battlefield",
+          hexes: combatTerrain.hexes?.length || combatTerrain.grid?.flat?.().length || 0,
+          props: combatTerrain.props?.length || 0,
+        };
+      }
       if (import.meta.env?.DEV || import.meta.env?.MODE === 'development') {
         console.log('[CombatPage] startCombat - Using existing combatTerrain with mapType:', combatTerrain.mapType);
       }
-      // Don't overwrite - combatTerrain is already set correctly
+      // Don't overwrite - combatTerrain is already set correctly.
     } else if (!skipPhase0 && phase0Results && phase0Results.environment) {
       // Resolve Phase 0 encounter if we have players and enemies
       const playerFighters = fighters.filter(f => f.type === "player");
@@ -61256,7 +61270,26 @@ function CombatPage({ characters = [] }) {
             });
           }
 
+          const selectedBattlefieldMap =
+            results.battlefieldMap ||
+            results.environment?.battlefieldMap ||
+            (
+              results.environment?.id &&
+              (results.environment?.schemaVersion || results.environment?.grid)
+                ? results.environment
+                : null
+            );
+
           setPhase0Results(results);
+
+          if (selectedBattlefieldMap) {
+            // Canonical Map Maker/Scene Setup authority. Keep the legacy
+            // Battle Map dropdown on Default so it cannot override this map
+            // with an older mapMaker.savedMaps.v1 entry during startCombat().
+            setSelectedBattleMapId("default");
+            setMapDefinition(selectedBattlefieldMap);
+          }
+
           // Set combatTerrain immediately so TacticalMap can use it before combat starts
           if (results.environment) {
             // CRITICAL: Verify mapType exists before setting
@@ -61269,7 +61302,17 @@ function CombatPage({ characters = [] }) {
               }
             }
 
-            setCombatTerrain(results.environment);
+            const nextCombatTerrain = selectedBattlefieldMap
+              ? {
+                  ...selectedBattlefieldMap,
+                  ...results.environment,
+                  battlefieldMapId: selectedBattlefieldMap.id,
+                }
+              : results.environment;
+            setCombatTerrain(nextCombatTerrain);
+            if (selectedBattlefieldMap) {
+              setMapDefinition(nextCombatTerrain);
+            }
             if (import.meta.env?.DEV || import.meta.env?.MODE === 'development') {
               console.log('[CombatPage] Set combatTerrain immediately with mapType:', results.environment?.mapType);
               console.log('[CombatPage] combatTerrain after set:', { mapType: results.environment?.mapType, terrain: results.environment?.terrain, lighting: results.environment?.lighting });

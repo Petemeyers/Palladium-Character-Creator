@@ -23,6 +23,11 @@ import { TERRAIN_TYPES, LIGHTING_CONDITIONS } from "../utils/terrainSystem";
 import { generateMapFromDescription } from "../utils/mapSceneGenerator";
 import { openMapEditor, closeMapEditor, isEditorActive } from "../utils/three/HexArena";
 import { getMapPreset, GRID_CONFIG } from "../data/movementRules";
+import SceneBattlefieldMapSelector from "./maps/SceneBattlefieldMapSelector.jsx";
+import {
+  BATTLEFIELD_FOG,
+  normalizeBattlefieldMap,
+} from "../utils/maps/battlefieldMapAuthority.js";
 
 export default function Phase0PreCombatModal({
   isOpen,
@@ -39,6 +44,9 @@ export default function Phase0PreCombatModal({
   const [generatedScene, setGeneratedScene] = useState(null);
   const [showEditorConfirm, setShowEditorConfirm] = useState(false);
   const [editorActive, setEditorActive] = useState(false);
+  const [selectedBattlefieldMap, setSelectedBattlefieldMap] = useState(null);
+  const [environmentalFog, setEnvironmentalFog] = useState(BATTLEFIELD_FOG.CLEAR);
+  const [fogOfWarEnabled, setFogOfWarEnabled] = useState(false);
   const editorCheckIntervalRef = useRef(null);
   
   // Cleanup interval on unmount
@@ -84,6 +92,43 @@ export default function Phase0PreCombatModal({
     }));
   };
 
+  const handleBattlefieldMapChange = (map) => {
+    if (!map) {
+      setSelectedBattlefieldMap(null);
+      return true;
+    }
+
+    const normalized = normalizeBattlefieldMap(map);
+    setSelectedBattlefieldMap(normalized);
+    setMapType(normalized.mapType || "hex");
+
+    const nextLighting =
+      normalized.environment?.lighting ||
+      normalized.lighting ||
+      "BRIGHT_DAYLIGHT";
+    const nextFog =
+      normalized.environment?.environmentalFog?.type ||
+      normalized.environmentalFog?.type ||
+      BATTLEFIELD_FOG.CLEAR;
+    const nextFogOfWar =
+      normalized.environment?.fogOfWar?.enabled === true ||
+      normalized.fogOfWar?.enabled === true ||
+      normalized.fogOfWarEnabled === true;
+
+    setLighting(nextLighting);
+    setEnvironmentalFog(nextFog);
+    setFogOfWarEnabled(nextFogOfWar);
+    setEnvironment((prev) => ({
+      ...prev,
+      lighting: nextLighting,
+      terrain: normalized.terrain || normalized.baseTerrain || prev.terrain,
+      environmentalFog: nextFog,
+      fogOfWarEnabled: nextFogOfWar,
+    }));
+
+    return true;
+  };
+
   const handleGenerateFromDescription = () => {
     if (!sceneDescription.trim()) {
       return;
@@ -106,6 +151,73 @@ export default function Phase0PreCombatModal({
   };
 
   const handleSceneSetup = () => {
+    // A canonical Map Maker battlefield takes precedence over the legacy
+    // terrain-description generator. This preserves exact cells, elevation,
+    // props, lighting, environmental fog, and Fog of War into Combat.
+    if (selectedBattlefieldMap) {
+      const battlefieldMap = normalizeBattlefieldMap({
+        ...selectedBattlefieldMap,
+        lighting,
+        environmentalFog,
+        fogOfWarEnabled,
+        environment: {
+          ...(selectedBattlefieldMap.environment || {}),
+          lighting,
+          environmentalFog: {
+            ...(selectedBattlefieldMap.environment?.environmentalFog || {}),
+            type: environmentalFog,
+          },
+          fogOfWar: {
+            ...(selectedBattlefieldMap.environment?.fogOfWar || {}),
+            enabled: fogOfWarEnabled,
+          },
+        },
+      });
+
+      GRID_CONFIG.GRID_WIDTH = battlefieldMap.width;
+      GRID_CONFIG.GRID_HEIGHT = battlefieldMap.height;
+
+      const compatibilityTerrainData =
+        TERRAIN_TYPES[battlefieldMap.terrain] ||
+        TERRAIN_TYPES[battlefieldMap.baseTerrain] ||
+        TERRAIN_TYPES.OPEN_GROUND;
+      const lightingData =
+        LIGHTING_CONDITIONS[battlefieldMap.environment?.lighting] ||
+        LIGHTING_CONDITIONS[lighting] ||
+        LIGHTING_CONDITIONS.BRIGHT_DAYLIGHT;
+      const fogRangeCap =
+        battlefieldMap.environment?.environmentalFog?.maximumVisualRangeFeet;
+      const baseVisibilityRange = Number(
+        battlefieldMap.visibilityRange ??
+        battlefieldMap.environment?.visibilityRange ??
+        60
+      );
+      const visibilityRange = Math.max(
+        5,
+        Number.isFinite(Number(fogRangeCap))
+          ? Math.min(baseVisibilityRange, Number(fogRangeCap))
+          : baseVisibilityRange
+      );
+
+      const combatEnvironment = {
+        ...battlefieldMap,
+        terrainData: battlefieldMap.terrainData || compatibilityTerrainData,
+        lightingData,
+        visibilityRange,
+        battlefieldMapId: battlefieldMap.id,
+        source: battlefieldMap.source || "saved",
+      };
+
+      onComplete({
+        battlefieldMap,
+        environment: combatEnvironment,
+        readyForPrecombat: true,
+        source: "battlefield-map",
+      });
+      onClose();
+      return;
+    }
+
     // Ã¢Å“â€¦ Debug: Log current state values
     console.log('[Phase0PreCombatModal] handleSceneSetup called - Current mapType state:', mapType);
     
@@ -231,6 +343,29 @@ export default function Phase0PreCombatModal({
         <ModalCloseButton />
         <ModalBody>
           <VStack spacing={4} align="stretch">
+            <SceneBattlefieldMapSelector
+              selectedMap={selectedBattlefieldMap}
+              onMapChange={handleBattlefieldMapChange}
+              lighting={lighting}
+              onLightingChange={handleLightingChange}
+              environmentalFog={environmentalFog}
+              onEnvironmentalFogChange={setEnvironmentalFog}
+              fogOfWarEnabled={fogOfWarEnabled}
+              onFogOfWarChange={setFogOfWarEnabled}
+            />
+
+            {selectedBattlefieldMap && (
+              <Box p={3} bg="teal.50" borderRadius="md" borderWidth="1px" borderColor="teal.200">
+                <Text fontSize="sm" fontWeight="bold">
+                  Authored battlefield selected: {selectedBattlefieldMap.name}
+                </Text>
+                <Text fontSize="xs" color="gray.700" mt={1}>
+                  Setup Scene will preserve this map's exact terrain, elevation, props, and battlefield environment.
+                  The legacy terrain generator below will not replace it.
+                </Text>
+              </Box>
+            )}
+
             {/* Map Type Selection */}
             <Box>
               <HStack justify="space-between" align="center" mb={2}>
