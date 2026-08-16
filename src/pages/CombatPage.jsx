@@ -36401,10 +36401,10 @@ function CombatPage({ characters = [] }) {
 
   // Handle charge attack (move and attack with bonuses)
   const handleChargeAttack = useCallback((attacker, target) => {
-    const terrainCheck = canChargeInTerrain(combatTerrain, attacker, positions);
-    const momentumMods = getChargeMomentumModifiers(attacker, target, positions);
     const attackerPos = positions?.[attacker?.id];
     const defenderPos = positions?.[target?.id];
+    const terrainCheck = canChargeInTerrain(combatTerrain, attacker, positions);
+    const momentumMods = getChargeMomentumModifiers(attacker, target, positions);
     const chargePreview = executeChargeAttack(
       attacker,
       target,
