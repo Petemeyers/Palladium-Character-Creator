@@ -536,6 +536,10 @@ import {
 } from "../utils/combat/formationCommandAuthority.js";
 import { planFormationMovementCommand } from "../utils/combat/formationMovementPlanner.js";
 import {
+  classifyPlayerAiProgressObservation,
+  filterAutomatedFormationOptionsForViability,
+} from "../utils/combat/aiTurnStabilityAuthority.js";
+import {
   resolveTerrainFormationContext,
 } from "../utils/combat/terrainFormationAuthority.js";
 import {
@@ -29329,7 +29333,11 @@ function CombatPage({ characters = [] }) {
       }
       const selectedFormationCommand = selectAutomatedFormationCommand({
         actor: effectiveAttacker,
-        options: automatedFormationOptions,
+        options: filterAutomatedFormationOptionsForViability({
+          actor: effectiveAttacker,
+          combatants: fightersRef.current || fighters,
+          options: automatedFormationOptions,
+        }),
         formation: attackFormationContext,
         movementPlans,
         targetDistanceFeet: polearmDistanceFt,
@@ -39800,6 +39808,10 @@ function CombatPage({ characters = [] }) {
         pendingContinuation: ownedContinuation?.continuationKey || null,
         authoritativeExecution: activeGrappleActionIdRef.current || activeAttackActionIdRef.current || null,
         activeActorId: liveRoster?.[turnIndexRef.current]?.id || null,
+        initiativeTurnId: initiativeTurnIdRef.current,
+        round: meleeRoundRef.current,
+        turnCounter: turnCounterRef.current,
+        turnIndex: turnIndexRef.current,
       };
     };
     const playerAiProgressBefore = getPlayerAiProgressSnapshot();
@@ -39888,7 +39900,28 @@ function CombatPage({ characters = [] }) {
       "info",
     );
     const playerAiProgressAfter = getPlayerAiProgressSnapshot();
-    const playerAiMadeProgress = hasPlayerAiActionProgress(
+    const playerAiProgressObservation = classifyPlayerAiProgressObservation(
+      playerAiProgressBefore,
+      playerAiProgressAfter,
+    );
+    if (playerAiProgressObservation.superseded) {
+      addLog?.({
+        audience: COMBAT_LOG_AUDIENCES.DEVELOPER,
+        channel: COMBAT_LOG_CHANNELS.VALIDATION,
+        eventType: "player-ai-progress-audit-superseded",
+        level: "info",
+        type: "debug",
+        actorId: startFighterId,
+        source: startReason,
+        message: `player AI progress audit superseded: actorId=${startFighterId} reasons=${playerAiProgressObservation.reasons.join(",") || "turn-coordinate-changed"}`,
+        data: {
+          before: playerAiProgressObservation.before,
+          after: playerAiProgressObservation.after,
+          reasons: playerAiProgressObservation.reasons,
+        },
+      }, "debug");
+    }
+    const playerAiMadeProgress = playerAiProgressObservation.superseded || hasPlayerAiActionProgress(
       playerAiProgressBefore,
       playerAiProgressAfter,
       {
@@ -39941,6 +39974,7 @@ function CombatPage({ characters = [] }) {
     );
     const canonicalContinuationOwnsProgress = Boolean(playerAiProgressAfter.pendingContinuation);
     const activeTurnNeedsOwner = Boolean(
+      !playerAiProgressObservation.superseded &&
       combatActiveRef.current &&
       !combatOverRef.current &&
       !combatEndCheckRef.current &&
@@ -39985,7 +40019,7 @@ function CombatPage({ characters = [] }) {
     // Invariant: player AI must spend an action OR end the turn.
     // This catches early returns that clear the processing flag or forget to advance,
     // and prevents the "enemy machine-gunning" feel even when initiative alternates.
-    if (!resolvedPlayerAi.acted) setTimeout(() => {
+    if (!playerAiProgressObservation.superseded && !resolvedPlayerAi.acted) setTimeout(() => {
       if (!isCurrentCombatSession(playerAICombatSession, "player-ai-no-action-watchdog")) return;
       if (blockStaleAction(latestPlayer, playerTurnToken, "player AI no-action watchdog", {
         debugOnly: true,
