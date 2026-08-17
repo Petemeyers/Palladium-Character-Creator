@@ -122,6 +122,40 @@ Preserve the current canonical direction:
 
 Do not silently substitute another RPG's initiative or reaction model.
 
+### Milestone and Structure Protection
+
+Milestone 8C production implementation is committed through the current HEAD.
+Preserve its contracts; do not regress them while documenting or implementing
+later combat architecture. Top-level Milestone 8D is already VERIFIED COMPLETE
+and is independent of remaining 8C deferred consumers.
+
+The universal `Structure` architecture must remain compatible with hex and
+square maps. On hex terrain, preserve square-first orthogonal walls: straight
+horizontal and vertical runs, true 90-degree corners, and no requirement that
+walls follow hex edges.
+
+Live hex combat/map positions use odd-r OFFSET `{ x: col, y: row }`. Square
+maps use direct grid coordinates. Normalize at one coordinate-authority
+boundary; callers must not ad-hoc reinterpret live combat positions as axial.
+
+Preserve planner/commit traversal agreement, structure-aware transactional
+movement, authored-map Scene Setup handoff, Map Maker editor/history
+authorities, 2D/3D logical-coordinate parity, Climb, AI turn-stability /
+formation viability, and rejected-movement propagation through
+`enemyMovementFallback`.
+
+Existing Milestone 8C internal names such as `8C-8D1` refer to 8C water and
+environment subphases. They are not the top-level Milestone 8D canonical
+combat-pipeline milestone. Preserve both naming contexts and make the scope
+explicit whenever adding roadmap documentation.
+
+Do not claim the following deferred consumers are complete until they are
+actually wired: gameplay FoW / Aim / targeting visibility unification,
+HexArena runtime use of `battlefieldEnvironment3D`, projectile structure-impact
+consumers, structure cover consumers, or broader Tactical Pulse structure-path
+integration. Visibility/local-environment/3D-environment authorities exist as
+a reusable layer awaiting those consumers.
+
 Top-level Milestone 8D (Canonical Combat Resolution Pipeline, Phases 1–10)
 is VERIFIED COMPLETE. See "Milestone 8D Canonical Authorities" below and the
 "Milestone 8D — Verified Canonical Combat Resolution Architecture" section in

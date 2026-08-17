@@ -1720,11 +1720,81 @@ initiative model.
 Long-term reaction and readiness mechanics may make combat appear more
 simultaneous while retaining deterministic simulation processing.
 
+## Structures, Maps, and Milestone 8C Protection
+
+Milestone 8C production implementation is committed through the current HEAD.
+Its structure, map, traversal, and related contracts must be preserved and must
+not be redesigned as part of later combat-pipeline documentation or unrelated
+combat changes. Top-level Milestone 8D is already VERIFIED COMPLETE; remaining
+8C work is deferred-consumer wiring, not a prerequisite for that closure.
+
+The universal `Structure` architecture must remain compatible with both hex
+maps and square maps. On hex terrain, preserve the established square-first,
+orthogonal wall direction:
+
+- straight horizontal runs
+- straight vertical runs
+- true 90-degree corners
+- walls are not required to follow hex edges merely because terrain uses a
+  hex grid
+
+### Milestone 8C — Committed Architecture
+
+Status: production implementation committed through current HEAD. Preserve
+these contracts; do not regress them.
+
+- Canonical battlefield map model (authored/built-in/saved/generated maps with
+  terrain, elevation, props, lighting, environmental fog, and Fog-of-War flags
+  as separate environment concepts).
+- Live hex combat and map positions are odd-r OFFSET `{ x: col, y: row }`.
+- Square maps use direct grid coordinates.
+- One coordinate-normalization boundary (map/structure coordinate authorities).
+  Callers must not ad-hoc reinterpret live combat positions as axial.
+- Square-first orthogonal `Structure` walls on hex and square maps, including
+  true 90-degree corners.
+- Structure spatial-query authority for movement, wall crossing, and related
+  logical queries.
+- Structure-aware transactional movement with planner/commit agreement under
+  the same battlefield snapshot.
+- Terrain, slope, and water traversal authorities, including canonical movement
+  terrain stamina.
+- Authored battlefield Scene Setup → Combat handoff (map definition /
+  combatTerrain preservation; legacy Battle Map override pinned off when an
+  authored map is selected).
+- Canonical Map Maker editor, history, and interaction authorities.
+- 2D / 3D logical-coordinate parity for authored cells and structures.
+- Terrain-mesh, bridge, structure, and square-map 3D rendering layers.
+- Canonical Climb action with Climbing skill alias support.
+- AI turn-stability and automated formation-viability filtering.
+- Rejected authoritative movement commits propagate through
+  `enemyMovementFallback` rather than being reported as successful moves.
+- Battlefield visibility, local-environment, and 3D-environment authority
+  modules exist as a reusable layer.
+
+### Milestone 8C — Deferred Consumers
+
+These authorities or adapters may exist, but the following consumers are not
+complete and must not be documented as live:
+
+- gameplay Fog of War / Aim / targeting visibility unification
+- HexArena runtime consumption of `battlefieldEnvironment3D`
+- projectile structure-impact consumer wiring
+- structure cover consumer wiring
+- broader Tactical Pulse structure-path integration
+
 ## Post-8C Combat Architecture Roadmap
 
 This roadmap names top-level milestones. It does not rename or replace existing
 Milestone 8C internal phase labels such as `8C-8D1` water traversal. Those
-spatial/environment phases remain part of Milestone 8C.
+spatial/environment subphases remain part of Milestone 8C and are not the same
+thing as top-level Milestone 8D.
+
+### Milestone 8C — Structure and Spatial Stabilization
+
+Status: production implementation committed through current HEAD. Preserve the
+committed architecture above. Remaining deferred consumers are listed under
+"Milestone 8C — Deferred Consumers" and belong to later integration work, not
+to a reopening of the production boundary.
 
 ### Top-Level Milestone 8D — Canonical Combat Resolution Pipeline
 
