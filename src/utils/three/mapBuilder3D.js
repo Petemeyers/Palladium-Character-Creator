@@ -1,3 +1,14 @@
+import { replaceOrthogonalStructureLayerGroup } from "./orthogonalStructure3D.js";
+import { replaceHexStructureLayerGroup } from "./hexStructure3D.js";
+import { replaceBridgeDeckLayerGroup } from "./bridgeDeck3D.js";
+import {
+  DEFAULT_TERRAIN_BOUNDARY_SKIRT_DEPTH_WORLD,
+  DEFAULT_TERRAIN_GEOMETRY_MODE,
+  TERRAIN_GEOMETRY_MODES,
+  computeTerrainBoundaryBottomY,
+  normalizeTerrainGeometryMode,
+  resolveTerracedEdgeWall,
+} from "../maps/terrainMeshAuthority.js";
 import * as THREE from "three";
 import { HexStackManager } from "./hexStackManager.js";
 import {
@@ -10,6 +21,11 @@ import {
   TILE_HEIGHT_UNIT_TO_WORLD_Y,
 } from "../hexGridMath.js";
 import { MAP_MIN_HEIGHT } from "../mapHeightConstants.js";
+import {
+  BATTLEFIELD_HEX_DIRECTIONS,
+  BATTLEFIELD_SLOPE_TRANSITIONS,
+  resolveTileEdgeTransitions,
+} from "../maps/battlefieldSlopeAuthority.js";
 
 const textureLoader = new THREE.TextureLoader();
 
@@ -21,6 +37,8 @@ const TERRAIN_TYPES = [
   "sand",
   "hill",
   "road",
+  "mud",
+  "rubble",
 ];
 const TERRAIN_COLOR = {
   grass: "#3A8D4F",
@@ -32,6 +50,8 @@ const TERRAIN_COLOR = {
   road: "#B2A07A",
   dirt: "#7a5230",
   stone: "#5A5A5A",
+  mud: "#6f4d32",
+  rubble: "#686868",
 };
 
 const WALL_KIND_COLOR = {
@@ -84,7 +104,7 @@ export function buildFeaturesForTerrain(terrain) {
       type: "tree",
       offsetX: (Math.random() - 0.5) * 0.5,
       offsetZ: (Math.random() - 0.5) * 0.5,
-      scale: 0.6 + Math.random() * 0.25,
+      scale: 0.95 + Math.random() * 0.35,
     }));
   }
   if (terrain === "rock" && Math.random() < 0.25) {
@@ -179,9 +199,24 @@ export function buildRectangular3DMap(rows = 12, cols = 12, options = {}) {
 // Texture cache for terrain types
 const textureCache = new Map();
 
-function createTerrainTexture(terrainType) {
+export function createTerrainTexture(terrainType) {
   if (textureCache.has(terrainType)) {
     return textureCache.get(terrainType);
+  }
+
+  const directTexturePaths = {
+    mud: "/assets/textures/terrain/terrain-mud.svg",
+    rubble: "/assets/textures/terrain/terrain-rubble.svg",
+  };
+  if (directTexturePaths[terrainType]) {
+    const texture = textureLoader.load(directTexturePaths[terrainType]);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(1, 1);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 8;
+    textureCache.set(terrainType, texture);
+    return texture;
   }
 
   // âœ… Load actual texture file for grass/grassland terrain
@@ -400,7 +435,7 @@ function getHexWallKind(cell = {}) {
   if (Math.abs(getHexHeight(cell)) <= TALL_COLUMN_SIDE_THRESHOLD_UNITS) return "earthBank";
   if (isWaterTerrain(cell)) return "shoreBank";
   const terrain = getHexSideTerrainType(cell);
-  return terrain === "rock" || terrain === "stone" ? "rockCliff" : "earthBank";
+  return terrain === "rock" || terrain === "stone" || terrain === "rubble" ? "rockCliff" : "earthBank";
 }
 
 // Future wall painting can resolve cell.wallTextureId or cell.wallTerrainType here.
@@ -409,29 +444,213 @@ function getHexWallMaterial(cell = {}) {
   return getTerrainWallMaterial(getHexWallKind(cell), wallTerrain);
 }
 
+function getTerrainGeometryMode(tile = {}) {
+  return normalizeTerrainGeometryMode(
+    tile?.terrainGeometryMode ||
+    tile?.geometryMode ||
+    tile?.gridCell?.terrainGeometryMode ||
+    tile?.gridCell?.geometryMode ||
+    DEFAULT_TERRAIN_GEOMETRY_MODE
+  );
+}
+
+function getTerrainBoundaryBottomY(neighborData = new Map(), fallbackTopY = 0) {
+  const surfaceYs = [];
+  if (neighborData?.forEach) {
+    neighborData.forEach((neighbor) => {
+      surfaceYs.push(editorTileSurfaceWorldY(getHexHeight(neighbor)));
+    });
+  }
+  if (surfaceYs.length === 0) surfaceYs.push(fallbackTopY);
+
+  const skirtDepth = Math.max(
+    DEFAULT_TERRAIN_BOUNDARY_SKIRT_DEPTH_WORLD,
+    Number(HEX_TILE_THICKNESS) * 2,
+    Number(TILE_HEIGHT_UNIT_TO_WORLD_Y) || 0
+  );
+
+  return computeTerrainBoundaryBottomY(surfaceYs, skirtDepth, fallbackTopY);
+}
+
+
 // Build a closed editor terrain prism. The top uses terrain paint; every side
 // uses the current automatic wall material until per-edge wall painting exists.
-function createHexColumnGeometry(radius, tile) {
-  const currentHeight = getHexHeight(tile);
-  const topY = editorTileSurfaceWorldY(currentHeight);
-  const stableBottomY = editorTileSurfaceWorldY(TERRAIN_COLUMN_BOTTOM);
-  const bottomY =
-    Math.min(stableBottomY, topY - HEX_TILE_THICKNESS) - WALL_VERTICAL_EPSILON;
+function isSlopeTransition(type) {
+  return type === BATTLEFIELD_SLOPE_TRANSITIONS.SLOPE ||
+    type === BATTLEFIELD_SLOPE_TRANSITIONS.STEEP_SLOPE;
+}
+
+// Flat, gentle-slope, and steep-slope edges all belong to one continuous
+// terrain surface. A shared corner must therefore use the same three-cell
+// sample on every participating hex. Excluding a flat neighbor makes the
+// same physical vertex resolve to different Y values on adjacent meshes,
+// producing visible open wedges/cracks when raised hexes touch.
+function isContinuousTerrainTransition(type) {
+  return type === BATTLEFIELD_SLOPE_TRANSITIONS.FLAT ||
+    isSlopeTransition(type);
+}
+
+function getNeighborTile(tile, neighborData, directionIndex) {
+  const direction = BATTLEFIELD_HEX_DIRECTIONS[directionIndex];
+  if (!direction || !neighborData?.get) return null;
+  return neighborData.get(`${Number(tile?.q || 0) + direction.dq},${Number(tile?.r || 0) + direction.dr}`) || null;
+}
+
+function getSlopeCornerTopY(tile, cornerIndex, edgeTransitions, neighborData) {
+  const ownY = editorTileSurfaceWorldY(getHexHeight(tile));
+  const samples = [ownY];
+
+  // After the mesh's 30-degree rotation, geometric corner i lies between
+  // axial directions i and i+1. Average every continuous terrain neighbor
+  // (flat, gentle slope, steep slope) so all meshes sharing this physical
+  // corner calculate the same Y. Cliff/wall edges retain a hard break.
+  const adjacentDirectionIndices = [
+    ((cornerIndex - 1) % 6 + 6) % 6,
+    ((cornerIndex % 6) + 6) % 6,
+  ];
+
+  adjacentDirectionIndices.forEach((directionIndex) => {
+    const transition = edgeTransitions?.[directionIndex];
+    if (!transition || !isContinuousTerrainTransition(transition.type)) return;
+    const neighbor = getNeighborTile(tile, neighborData, directionIndex);
+    if (!neighbor) return;
+    samples.push(editorTileSurfaceWorldY(getHexHeight(neighbor)));
+  });
+
+  return samples.reduce((sum, value) => sum + value, 0) / samples.length;
+}
+
+function getSlopeCornerPoints(radius, tile, edgeTransitions, neighborData) {
+  return Array.from({ length: 6 }, (_, cornerIndex) => {
+    const y = getSlopeCornerTopY(tile, cornerIndex, edgeTransitions, neighborData);
+    return getHexCornerPoint(radius, cornerIndex, y);
+  });
+}
+
+function getGeometryEdgeDirectionIndex(edgeIndex) {
+  // The local hex mesh is rotated +30 degrees around Three.js Y.
+  // In the project's X/Z angle convention, geometry edge i then faces
+  // battlefield direction i exactly:
+  // 0=E, 1=SE, 2=SW, 3=W, 4=NW, 5=NE.
+  return ((edgeIndex % 6) + 6) % 6;
+}
+
+export function getHexSlopeSurfaceProfile(tile, neighborData = new Map(), radius = 1) {
+  const centerY = editorTileSurfaceWorldY(getHexHeight(tile));
+  const edgeTransitions = resolveTileEdgeTransitions(tile, neighborData);
+  const cornerPoints = getSlopeCornerPoints(radius, tile, edgeTransitions, neighborData);
+  return {
+    centerY,
+    cornerTopY: cornerPoints.map((point) => point[1]),
+    cornerPoints,
+    edgeTransitions,
+  };
+}
+
+// Build a closed terrain tile with a slope-aware top surface. One/two height
+// unit changes become continuous terrain facets where allowed by the slope
+// authority. Cliff/wall edges keep a vertical face, preserving tactical
+// readability and a clear non-walkable boundary.
+
+function createTerracedHexColumnGeometry(radius, tile, neighborData = new Map()) {
+  const topY = editorTileSurfaceWorldY(getHexHeight(tile));
+  const boundaryBottomY = getTerrainBoundaryBottomY(neighborData, topY);
+  const edgeTransitions = resolveTileEdgeTransitions(tile, neighborData);
+  const topCorners = getHexCornerPoints(radius, topY);
   const vertices = [];
   const uvs = [];
   const indices = [];
 
-  const topCenterIndex = vertices.length / 3;
-  vertices.push(0, topY, 0);
-  uvs.push(0.5, 0.5);
-
+  const topCenterIndex = addVertex(vertices, uvs, 0, topY, 0, 0.5, 0.5);
   const topRingStart = vertices.length / 3;
-  const topCorners = getHexCornerPoints(radius, topY);
+  topCorners.forEach(([x, y, z]) => {
+    addVertex(vertices, uvs, x, y, z, (x / radius + 1) / 2, (z / radius + 1) / 2);
+  });
+
+  const topIndexStart = indices.length;
   for (let i = 0; i < 6; i++) {
-    const [x, , z] = topCorners[i];
-    vertices.push(x, topY, z);
-    uvs.push((x / radius + 1) / 2, (z / radius + 1) / 2);
+    const next = (i + 1) % 6;
+    indices.push(topCenterIndex, topRingStart + next, topRingStart + i);
   }
+  const topIndexCount = indices.length - topIndexStart;
+
+  const wallIndexStart = indices.length;
+  let boundaryWallCount = 0;
+  let interiorWallCount = 0;
+
+  for (let edgeIndex = 0; edgeIndex < 6; edgeIndex++) {
+    const nextCorner = (edgeIndex + 1) % 6;
+    const directionIndex = getGeometryEdgeDirectionIndex(edgeIndex);
+    const neighbor = getNeighborTile(tile, neighborData, directionIndex);
+    const neighborTopY = neighbor
+      ? editorTileSurfaceWorldY(getHexHeight(neighbor))
+      : null;
+
+    const plan = resolveTerracedEdgeWall({
+      ownTopY: topY,
+      neighborTopY,
+      hasNeighbor: Boolean(neighbor),
+      boundaryBottomY,
+      epsilon: WALL_VERTICAL_EPSILON,
+    });
+    if (!plan.draw) continue;
+
+    const upperA = [
+      topCorners[edgeIndex][0],
+      plan.upperY + WALL_VERTICAL_EPSILON,
+      topCorners[edgeIndex][2],
+    ];
+    const upperB = [
+      topCorners[nextCorner][0],
+      plan.upperY + WALL_VERTICAL_EPSILON,
+      topCorners[nextCorner][2],
+    ];
+    const lowerA = [upperA[0], plan.lowerY - WALL_VERTICAL_EPSILON, upperA[2]];
+    const lowerB = [upperB[0], plan.lowerY - WALL_VERTICAL_EPSILON, upperB[2]];
+    addWallQuad(vertices, uvs, indices, upperA, upperB, lowerA, lowerB);
+
+    if (plan.kind === "boundary") boundaryWallCount += 1;
+    else interiorWallCount += 1;
+  }
+
+  const wallIndexCount = indices.length - wallIndexStart;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.clearGroups();
+  geometry.addGroup(topIndexStart, topIndexCount, 0);
+  if (wallIndexCount > 0) geometry.addGroup(wallIndexStart, wallIndexCount, 1);
+  geometry.computeVertexNormals();
+  geometry.userData = {
+    ...(geometry.userData || {}),
+    terrainGeometryMode: TERRAIN_GEOMETRY_MODES.TERRACED,
+    boundaryBottomY,
+    boundaryWallCount,
+    interiorWallCount,
+    hasBottomCap: false,
+    slopeTransitions: edgeTransitions.map(
+      (edge) => edge?.type || BATTLEFIELD_SLOPE_TRANSITIONS.FLAT
+    ),
+  };
+  return geometry;
+}
+
+function createSlopeAwareHexColumnGeometry(radius, tile, neighborData = new Map()) {
+  const topY = editorTileSurfaceWorldY(getHexHeight(tile));
+  const boundaryBottomY = getTerrainBoundaryBottomY(neighborData, topY);
+  const slopeProfile = getHexSlopeSurfaceProfile(tile, neighborData, radius);
+  const edgeTransitions = slopeProfile.edgeTransitions;
+  const topCorners = slopeProfile.cornerPoints;
+  const vertices = [];
+  const uvs = [];
+  const indices = [];
+
+  const topCenterIndex = addVertex(vertices, uvs, 0, topY, 0, 0.5, 0.5);
+  const topRingStart = vertices.length / 3;
+  topCorners.forEach(([x, y, z]) => {
+    addVertex(vertices, uvs, x, y, z, (x / radius + 1) / 2, (z / radius + 1) / 2);
+  });
 
   const topIndexStart = indices.length;
   for (let i = 0; i < 6; i++) {
@@ -440,37 +659,78 @@ function createHexColumnGeometry(radius, tile) {
   }
   const topIndexCount = indices.length - topIndexStart;
   const wallIndexStart = indices.length;
-  const topWallCorners = getHexCornerPoints(radius, topY + WALL_VERTICAL_EPSILON);
-  const bottomWallCorners = getHexCornerPoints(radius, bottomY);
+  let boundaryWallCount = 0;
+  let interiorWallCount = 0;
 
-  for (let i = 0; i < 6; i++) {
-    const next = (i + 1) % 6;
-    // Every wall edge uses corners[i] to corners[i + 1], same as the top mesh.
-    const ustaminarA = topWallCorners[i];
-    const ustaminarB = topWallCorners[next];
-    const lowerA = bottomWallCorners[i];
-    const lowerB = bottomWallCorners[next];
-    addWallQuad(vertices, uvs, indices, ustaminarA, ustaminarB, lowerA, lowerB);
+  for (let edgeIndex = 0; edgeIndex < 6; edgeIndex++) {
+    const nextCorner = (edgeIndex + 1) % 6;
+    const directionIndex = getGeometryEdgeDirectionIndex(edgeIndex);
+    const transition = edgeTransitions?.[directionIndex];
+    const neighbor = getNeighborTile(tile, neighborData, directionIndex);
+    const upperA = [
+      topCorners[edgeIndex][0],
+      topCorners[edgeIndex][1] + WALL_VERTICAL_EPSILON,
+      topCorners[edgeIndex][2],
+    ];
+    const upperB = [
+      topCorners[nextCorner][0],
+      topCorners[nextCorner][1] + WALL_VERTICAL_EPSILON,
+      topCorners[nextCorner][2],
+    ];
 
-    if (DEBUG_TERRAIN_WALLS) {
-      console.debug(
-        `terrain column wall generated: (${tile.q},${tile.r}) edge=${i} cornerA=${ustaminarA.join(",")} cornerB=${ustaminarB.join(",")}`
-      );
+    if (!neighbor || transition?.type === BATTLEFIELD_SLOPE_TRANSITIONS.BOUNDARY) {
+      const lowerA = [upperA[0], boundaryBottomY, upperA[2]];
+      const lowerB = [upperB[0], boundaryBottomY, upperB[2]];
+      addWallQuad(vertices, uvs, indices, upperA, upperB, lowerA, lowerB);
+      boundaryWallCount += 1;
+      continue;
     }
-  }
-  const wallIndexCount = indices.length - wallIndexStart;
-  const bottomGroup = addBottomFace(vertices, uvs, indices, radius, bottomY);
 
+    if (
+      isSlopeTransition(transition?.type) ||
+      transition?.type === BATTLEFIELD_SLOPE_TRANSITIONS.FLAT
+    ) {
+      continue;
+    }
+
+    const neighborTopY = editorTileSurfaceWorldY(getHexHeight(neighbor));
+    if (topY <= neighborTopY + WALL_VERTICAL_EPSILON) continue;
+
+    const lowerA = [upperA[0], neighborTopY - WALL_VERTICAL_EPSILON, upperA[2]];
+    const lowerB = [upperB[0], neighborTopY - WALL_VERTICAL_EPSILON, upperB[2]];
+    addWallQuad(vertices, uvs, indices, upperA, upperB, lowerA, lowerB);
+    interiorWallCount += 1;
+  }
+
+  const wallIndexCount = indices.length - wallIndexStart;
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   geometry.setIndex(indices);
   geometry.clearGroups();
   geometry.addGroup(topIndexStart, topIndexCount, 0);
-  geometry.addGroup(wallIndexStart, wallIndexCount, 1);
-  geometry.addGroup(bottomGroup.start, bottomGroup.count, 1);
+  if (wallIndexCount > 0) geometry.addGroup(wallIndexStart, wallIndexCount, 1);
   geometry.computeVertexNormals();
+  geometry.userData = {
+    ...(geometry.userData || {}),
+    terrainGeometryMode: TERRAIN_GEOMETRY_MODES.SLOPE_AWARE,
+    boundaryBottomY,
+    boundaryWallCount,
+    interiorWallCount,
+    hasBottomCap: false,
+    slopeTransitions: edgeTransitions.map(
+      (edge) => edge?.type || BATTLEFIELD_SLOPE_TRANSITIONS.FLAT
+    ),
+  };
   return geometry;
+}
+
+function createHexColumnGeometry(radius, tile, neighborData = new Map()) {
+  const mode = getTerrainGeometryMode(tile);
+  if (mode === TERRAIN_GEOMETRY_MODES.SLOPE_AWARE) {
+    return createSlopeAwareHexColumnGeometry(radius, tile, neighborData);
+  }
+  return createTerracedHexColumnGeometry(radius, tile, neighborData);
 }
 
 export function createHexMesh(tile, size = 1, neighborData = new Map()) {
@@ -482,7 +742,7 @@ export function createHexMesh(tile, size = 1, neighborData = new Map()) {
 
   const surfaceY = editorTileSurfaceWorldY(tileHeightUnits);
 
-  const geometry = createHexColumnGeometry(size, tile);
+  const geometry = createHexColumnGeometry(size, tile, neighborData);
 
   // Top material = terrain surface; side material = automatic cliff/soil wall.
   const texture = createTerrainTexture(getHexTopTerrainType(tile));
@@ -518,27 +778,64 @@ export function createHexMesh(tile, size = 1, neighborData = new Map()) {
   );
   mesh.position.copy(pos);
   mesh.userData = { ...tile, surfaceY };
+  replaceBridgeDeckLayerGroup({
+    tileMesh: mesh,
+    cell: tile?.gridCell || tile,
+    tileSpan: size * Math.sqrt(3),
+    mapType: "hex",
+    parentRotationY: Math.PI / 6,
+  });
+  replaceHexStructureLayerGroup({
+    tileMesh: mesh,
+    cell: tile?.gridCell || tile,
+    hexRadius: size,
+    x: tile.q ?? 0,
+    y: tile.r ?? 0,
+    neighborData,
+  });
+  // Milestone 8C-8C.2 R5.2:
+  // Orthogonal structures MUST be registered after this terrain tile has a
+  // map parent. Rendering them here synchronously made structureParent equal
+  // to tileMesh itself, so every cell had an isolated calibration state and
+  // initial builds used axial q/r as if they were editor offset coordinates.
+  // That is why wall boxes could jump after a 3D rebuild/view toggle.
+  const renderOrthogonalStructuresAfterParenting = () => {
+    if (!mesh.parent) return;
+    const gridPosition = tile?.gridPosition || mesh.userData?.gridPosition || axialToOffset(tile.q ?? 0, tile.r ?? 0);
+    const col = Number(gridPosition?.col);
+    const row = Number(gridPosition?.row);
+    replaceOrthogonalStructureLayerGroup({
+      tileMesh: mesh,
+      cell: tile?.gridCell || tile,
+      mapType: "hex",
+      hexRadius: size,
+      x: Number.isFinite(col) ? col : 0,
+      y: Number.isFinite(row) ? row : 0,
+    });
+    mesh.removeEventListener?.("added", renderOrthogonalStructuresAfterParenting);
+  };
+  mesh.addEventListener?.("added", renderOrthogonalStructuresAfterParenting);
   return mesh;
 }
 
 export function createForestTree() {
   const tree = new THREE.Group();
 
-  const trunkGeometry = new THREE.CylinderGeometry(0.06, 0.1, 1.6, 6);
+  const trunkGeometry = new THREE.CylinderGeometry(0.07, 0.10, 3.4, 8);
   const trunkMaterial = new THREE.MeshStandardMaterial({ color: "#8B5A2B" });
   const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
   trunk.name = "trunk";
   trunk.castShadow = true;
   trunk.receiveShadow = true;
 
-  const leavesGeometry = new THREE.ConeGeometry(0.35, 1.4, 10);
+  const leavesGeometry = new THREE.ConeGeometry(0.62, 4.0, 12);
   const leavesMaterial = new THREE.MeshStandardMaterial({
     color: "#0F3D0F",
     flatShading: true,
   });
   const leaves = new THREE.Mesh(leavesGeometry, leavesMaterial);
   leaves.name = "leaves";
-  leaves.position.y = 1;
+  leaves.position.y = 3.35;
   leaves.castShadow = true;
   leaves.receiveShadow = true;
 
@@ -576,21 +873,23 @@ function getTerrainWallMaterial(wallKind, terrainType = null) {
  * Normalize terrain names from various sources (hexGridGenerator, TacticalMap, etc.)
  * to the simple terrain keys expected by the 3D builder (grass, forest, rock, etc.)
  */
-function normalizeTerrainName(raw) {
+export function normalizeTerrainName(raw) {
   const t = String(raw || "grass").toLowerCase();
 
   // Already compatible
-  if (["grass", "forest", "rock", "stone", "water", "sand", "dirt", "hill", "road"].includes(t))
+  if (["grass", "forest", "rock", "stone", "water", "sand", "dirt", "hill", "road", "mud", "rubble"].includes(t))
     return t;
 
   // terrainKey-style inputs from hexGridGenerator (and similar)
   if (t.includes("forest")) return "forest";
-  if (t.includes("rock") || t.includes("mountain") || t.includes("ruins"))
+  if (t.includes("rubble") || t.includes("ruins") || t.includes("debris")) return "rubble";
+  if (t.includes("rock") || t.includes("mountain"))
     return "rock";
   if (t.includes("swamp") || t.includes("marsh") || t.includes("water"))
     return "water";
   if (t.includes("desert") || t.includes("sand")) return "sand";
-  if (t.includes("dirt") || t.includes("mud")) return "dirt";
+  if (t.includes("mud") || t.includes("bog")) return "mud";
+  if (t.includes("dirt")) return "dirt";
   if (t.includes("hill")) return "hill";
   if (t.includes("road")) return "road";
 
@@ -639,6 +938,9 @@ export function buildHexagon3DFromGrid(grid = [], hexRadius = 1) {
           textureId: cell.textureId,
           wallTerrainType: cell.wallTerrainType,
           wallTextureId: cell.wallTextureId,
+          edgeTransitions: cell.edgeTransitions,
+        terrainGeometryMode: cell.terrainGeometryMode || cell.geometryMode,
+          terrainGeometryMode: cell.terrainGeometryMode || cell.geometryMode,
           features: cell.features || (cell.feature ? [cell.feature] : []),
           gridCell: cell,
           gridPosition: { col: colIndex, row: rowIndex },
@@ -667,6 +969,8 @@ export function buildHexagon3DFromGrid(grid = [], hexRadius = 1) {
         textureId: cell.textureId,
         wallTerrainType: cell.wallTerrainType,
         wallTextureId: cell.wallTextureId,
+        edgeTransitions: cell.edgeTransitions,
+        terrainGeometryMode: cell.terrainGeometryMode || cell.geometryMode,
         features: cell.features || (cell.feature ? [cell.feature] : []),
         gridCell: cell,
       });
@@ -715,6 +1019,7 @@ export function cellToTile(col, row, cell = {}) {
     textureId: cell.textureId,
     wallTerrainType: cell.wallTerrainType,
     wallTextureId: cell.wallTextureId,
+    edgeTransitions: cell.edgeTransitions,
     features: cell.features || (cell.feature ? [cell.feature] : []),
     gridCell: cell,
     gridPosition: { col, row },
@@ -741,14 +1046,15 @@ export function updateHexMeshFromCell(
   const nextColor = terrainColor(tile.terrain);
   const texture = createTerrainTexture(getHexTopTerrainType(tile));
   if (mesh.material) {
-    // Don't dfocusose cached textures (they're shared across tiles)
+    // Don't dispose cached textures (they're shared across tiles)
     if (Array.isArray(mesh.material)) {
-      const [topMaterial] = mesh.material;
+      const [topMaterial, previousWallMaterial] = mesh.material;
       if (topMaterial) {
         topMaterial.map = texture;
         topMaterial.color?.set(0xffffff);
         topMaterial.needsUpdate = true;
       }
+      previousWallMaterial?.dispose?.();
       mesh.material = [
         topMaterial,
         getHexWallMaterial(tile),
@@ -767,8 +1073,8 @@ export function updateHexMeshFromCell(
   const surfaceY = editorTileSurfaceWorldY(tile.height);
 
   // Rebuild this tile's closed prism after height or terrain edits.
-  if (mesh.geometry) mesh.geometry.dfocusose();
-  mesh.geometry = createHexColumnGeometry(hexRadius, tile);
+  if (mesh.geometry) mesh.geometry.dispose?.();
+  mesh.geometry = createHexColumnGeometry(hexRadius, tile, neighborData);
 
   // âœ… Keep the same orientation after rebuild
   mesh.rotation.y = Math.PI / 6; // 30 degrees
@@ -783,6 +1089,32 @@ export function updateHexMeshFromCell(
     previousHeight: currentHeight,
     surfaceY,
   };
+
+  replaceBridgeDeckLayerGroup({
+    tileMesh: mesh,
+    cell,
+    tileSpan: hexRadius * Math.sqrt(3),
+    mapType: "hex",
+    parentRotationY: Math.PI / 6,
+  });
+
+  replaceHexStructureLayerGroup({
+    tileMesh: mesh,
+    cell,
+    hexRadius,
+    x: col,
+    y: row,
+    neighborData,
+  });
+
+  replaceOrthogonalStructureLayerGroup({
+    tileMesh: mesh,
+    cell,
+    mapType: "hex",
+    hexRadius,
+    x: col,
+    y: row,
+  });
 
   return true;
 }
@@ -831,6 +1163,12 @@ export function syncGridDiffToGroup({
     changedByKey.set(key, { col, row, cell, tile });
     tileByKey.set(key, tile);
     affectedKeys.add(key);
+    BATTLEFIELD_HEX_DIRECTIONS.forEach((direction) => {
+      const neighborKey = makeTileKey(q + direction.dq, r + direction.dr);
+      if (tileByKey.has(neighborKey) || tileMeshLookup.has(neighborKey)) {
+        affectedKeys.add(neighborKey);
+      }
+    });
   }
 
   for (const key of affectedKeys) {

@@ -37,6 +37,18 @@ export const TERRAIN_TEXTURE_REGISTRY = {
     texturePath: "/assets/textures/terrain/terrain-road.svg",
     fallbackColor: "#8a6a45",
   },
+  mud: {
+    texturePath: "/assets/textures/terrain/terrain-mud.svg",
+    fallbackColor: "#6f4d32",
+  },
+  rubble: {
+    texturePath: "/assets/textures/terrain/terrain-rubble.svg",
+    fallbackColor: "#686868",
+  },
+  hill: {
+    texturePath: "/assets/textures/terrain/terrain-rock.svg",
+    fallbackColor: "#71834d",
+  },
 };
 
 const TERRAIN_ALIASES = {
@@ -60,8 +72,7 @@ const TERRAIN_ALIASES = {
   marsh: "water",
   deep_water: "water",
   desert: "sand",
-  mud: "dirt",
-  hill: "rock",
+  hill: "hill",
 };
 
 export function normalizeTerrainTextureKey(raw = "grass") {
@@ -76,9 +87,12 @@ export function normalizeTerrainTextureKey(raw = "grass") {
   if (key.includes("forest")) return "forest";
   if (key.includes("water") || key.includes("swamp") || key.includes("marsh")) return "water";
   if (key.includes("stone") || key.includes("cave") || key.includes("interior")) return "stone";
-  if (key.includes("rock") || key.includes("mountain") || key.includes("ruins")) return "rock";
+  if (key.includes("rubble") || key.includes("ruins") || key.includes("debris")) return "rubble";
+  if (key.includes("rock") || key.includes("mountain")) return "rock";
   if (key.includes("sand") || key.includes("desert")) return "sand";
-  if (key.includes("dirt") || key.includes("mud")) return "dirt";
+  if (key.includes("mud") || key.includes("bog")) return "mud";
+  if (key.includes("dirt")) return "dirt";
+  if (key.includes("hill") || key.includes("ridge") || key.includes("elevated")) return "hill";
   if (key.includes("road") || key.includes("urban") || key.includes("city")) return "road";
   return "grass";
 }

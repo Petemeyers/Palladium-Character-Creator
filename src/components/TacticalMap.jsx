@@ -1,3 +1,26 @@
+import {
+  getCellOrthogonalStructureSegments,
+  getOrthogonalStructure2DStyle,
+  orthogonalStructureSegmentToOwnerSvgLine,
+} from "../utils/maps/orthogonalStructureAuthority.js";
+import { buildOrthogonalHexStructurePreview } from "../utils/maps/orthogonalStructureGenerator.js";
+import { buildHexStructureCellPath } from "../utils/maps/gridStructureGenerator.js";
+import { buildBridgeCellPath } from "../utils/maps/bridgeLayerAuthority.js";
+import {
+  getGridCellStructureEdge,
+  getGridStructure2DStyle,
+  getGridStructureDirections,
+  shouldRenderGridStructureEdge,
+} from "../utils/maps/gridStructureAuthority.js";
+import {
+  applyWaterEnvironmentToCell,
+  getWaterEnvironmentFromCell,
+} from "../utils/maps/waterTraversalAuthority.js";
+import {
+  getSquareCellStructureEdge,
+  getSquareStructure2DStyle,
+  shouldRenderSquareStructureEdge,
+} from "../utils/maps/squareStructureAuthority.js";
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import PropTypes from "prop-types";
 import { motion } from "framer-motion";
@@ -104,6 +127,18 @@ const TacticalMap = ({
   onSelectedTerrainTypeChange = null, // Editor: (terrainKey) => void
   onMapCellEdit = null, // Editor: (col,row,cell) -> parent handles state + 3D sync
   onMapCellsEdit = null, // Editor: (changes: Array<{x,y,cell}>) -> bulk edit for bucket fill
+  editorBrushMode: editorBrushModeProp = null,
+  editorHeightStep: editorHeightStepProp = null,
+  editorFlattenHeight: editorFlattenHeightProp = 0,
+  waterPaintConfig = null,
+  structureDragMode = "edge",
+  onStructureDragStart = null,
+  onStructureDragPreview = null,
+  onStructureDragEnd = null,
+  onEditorMutationBegin = null,
+  showEditorOverlay = true,
+  showMapControls = null,
+  autoFit = false,
 }) => {
   // Helper to normalize combatant ids from various sources
   const getCombatantId = useCallback(
@@ -176,9 +211,20 @@ const TacticalMap = ({
   }, [positions, combatants, getCombatantId]);
 
   // MAP_EDITOR: brush mode + drag-painting support
-  const [editorBrushMode, setEditorBrushMode] = useState("terrain"); // "terrain" | "bucket" | "raise" | "lower"
-  const [editorHeightStep, setEditorHeightStep] = useState(1);
+  const [internalEditorBrushMode, setInternalEditorBrushMode] = useState("terrain"); // "terrain" | "bucket" | "raise" | "lower" | "flatten"
+  const [internalEditorHeightStep, setInternalEditorHeightStep] = useState(1);
+  const editorBrushMode = editorBrushModeProp || internalEditorBrushMode;
+  const editorHeightStep = Number(editorHeightStepProp ?? internalEditorHeightStep) || 1;
+  const editorFlattenHeight = clampEditorHeight(editorFlattenHeightProp ?? 0);
+  const setEditorBrushMode = useCallback((next) => {
+    if (editorBrushModeProp == null) setInternalEditorBrushMode(next);
+  }, [editorBrushModeProp]);
+  const setEditorHeightStep = useCallback((next) => {
+    if (editorHeightStepProp == null) setInternalEditorHeightStep(next);
+  }, [editorHeightStepProp]);
   const isPointerPaintingRef = useRef(false);
+  const structureDragRef = useRef(null);
+  const [structureDragPreview, setStructureDragPreview] = useState(null);
   const lastPaintedCellKeyRef = useRef(null);
   const activeHeightStrokeRef = useRef(false);
   const paintedHeightHexesThisStrokeRef = useRef(new Set());
@@ -558,6 +604,7 @@ const TacticalMap = ({
   const applyMapEditorEdit = useCallback(
     (x, y) => {
       if (mode !== "MAP_EDITOR" || !mapDefinition) return false;
+      if (editorBrushMode === "select" || editorBrushMode === "disabled") return false;
 
       const prevCell =
         (Array.isArray(mapDefinition.grid) &&
@@ -582,10 +629,16 @@ const TacticalMap = ({
           terrain: terrainKey,
           terrainType: terrainKey,
         };
+        if (terrainKey === "water") {
+          nextCell = applyWaterEnvironmentToCell(
+            nextCell,
+            waterPaintConfig || {}
+          );
+        }
       } else if (editorBrushMode === "bucket") {
         // Bucket is handled separately (flood fill) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â do nothing here.
         return false;
-      } else if (editorBrushMode === "raise" || editorBrushMode === "lower") {
+      } else if (editorBrushMode === "raise" || editorBrushMode === "lower" || editorBrushMode === "flatten") {
         const key = `${x},${y}`;
         if (activeHeightStrokeRef.current && paintedHeightHexesThisStrokeRef.current.has(key)) {
           console.log(`ÃƒÂ°Ã…Â¸Ã…Â¡Ã‚Â« height paint duplicate skistaminad: (${x},${y})`);
@@ -593,8 +646,9 @@ const TacticalMap = ({
         }
 
         const step = Number(editorHeightStep) || 1;
-        const delta = editorBrushMode === "raise" ? step : -step;
-        const nextElevation = clampEditorHeight(prevElevation + delta);
+        const nextElevation = editorBrushMode === "flatten"
+          ? editorFlattenHeight
+          : clampEditorHeight(prevElevation + (editorBrushMode === "raise" ? step : -step));
         nextCell = {
           ...nextCell,
           elevation: nextElevation,
@@ -616,17 +670,20 @@ const TacticalMap = ({
     },
     [
       editorBrushMode,
+      editorFlattenHeight,
       editorHeightStep,
       mapDefinition,
       mode,
       onMapCellEdit,
       selectedTerrainType,
+      waterPaintConfig,
     ]
   );
 
   const applyMapEditorBrushEdit = useCallback(
     (x, y) => {
       if (mode !== "MAP_EDITOR" || !mapDefinition) return false;
+      if (editorBrushMode === "select" || editorBrushMode === "disabled") return false;
       if (editorBrushMode === "bucket") return false;
 
       const width = mapDefinition.grid?.[0]?.length ?? GRID_CONFIG.GRID_WIDTH;
@@ -641,20 +698,33 @@ const TacticalMap = ({
           const key = `${hex.x},${hex.y}`;
           if (isPointerPaintingRef.current && paintedHeightHexesThisStrokeRef.current.has(key)) return;
           const prevCell = mapDefinition.grid?.[hex.y]?.[hex.x] || {};
-          if (prevCell.terrain === terrainKey && prevCell.terrainType === terrainKey) return;
+          if (
+            prevCell.terrain === terrainKey &&
+            prevCell.terrainType === terrainKey &&
+            terrainKey !== "water"
+          ) return;
           paintedHeightHexesThisStrokeRef.current.add(key);
+          const paintedCell = terrainKey === "water"
+            ? applyWaterEnvironmentToCell(
+                {
+                  ...prevCell,
+                  terrain: terrainKey,
+                  terrainType: terrainKey,
+                },
+                waterPaintConfig || {}
+              )
+            : {
+                ...prevCell,
+                terrain: terrainKey,
+                terrainType: terrainKey,
+              };
           changes.push({
             x: hex.x,
             y: hex.y,
-            cell: {
-              ...prevCell,
-              terrain: terrainKey,
-              terrainType: terrainKey,
-            },
+            cell: paintedCell,
           });
         });
-      } else if (editorBrushMode === "raise" || editorBrushMode === "lower") {
-        const delta = editorBrushMode === "raise" ? step : -step;
+      } else if (editorBrushMode === "raise" || editorBrushMode === "lower" || editorBrushMode === "flatten") {
         affectedHexes.forEach((hex) => {
           const key = `${hex.x},${hex.y}`;
           if (isPointerPaintingRef.current && paintedHeightHexesThisStrokeRef.current.has(key)) return;
@@ -666,7 +736,9 @@ const TacticalMap = ({
                 ? prevCell.height
                 : 0;
           const prevElevation = Number(prevElevationRaw) || 0;
-          const nextElevation = clampEditorHeight(prevElevation + delta);
+          const nextElevation = editorBrushMode === "flatten"
+            ? editorFlattenHeight
+            : clampEditorHeight(prevElevation + (editorBrushMode === "raise" ? step : -step));
           if (nextElevation === prevElevation) return;
           paintedHeightHexesThisStrokeRef.current.add(key);
           changes.push({
@@ -701,12 +773,14 @@ const TacticalMap = ({
     [
       brushRadius,
       editorBrushMode,
+      editorFlattenHeight,
       editorHeightStep,
       mapDefinition,
       mode,
       onMapCellEdit,
       onMapCellsEdit,
       selectedTerrainType,
+      waterPaintConfig,
     ]
   );
 
@@ -719,7 +793,10 @@ const TacticalMap = ({
       const startCell = mapDefinition.grid?.[startY]?.[startX] || {};
       const target = normalizeEditorTerrainKey(startCell.terrainType || startCell.terrain || mapDefinition.baseTerrain);
 
-      if (!replacement || replacement === target) return;
+      if (
+        !replacement ||
+        (replacement === target && replacement !== "water")
+      ) return;
 
       const width = mapDefinition.grid?.[0]?.length ?? GRID_CONFIG.GRID_WIDTH;
       const height = mapDefinition.grid?.length ?? GRID_CONFIG.GRID_HEIGHT;
@@ -773,14 +850,25 @@ const TacticalMap = ({
         const cellKey = normalizeEditorTerrainKey(cell.terrainType || cell.terrain || mapDefinition.baseTerrain);
         if (cellKey !== target) continue; // border
 
+        const replacementCell = replacement === "water"
+          ? applyWaterEnvironmentToCell(
+              {
+                ...cell,
+                terrain: replacement,
+                terrainType: replacement,
+              },
+              waterPaintConfig || {}
+            )
+          : {
+              ...cell,
+              terrain: replacement,
+              terrainType: replacement,
+            };
+
         changes.push({
           x: cur.x,
           y: cur.y,
-          cell: {
-            ...cell,
-            terrain: replacement,
-            terrainType: replacement,
-          },
+          cell: replacementCell,
         });
 
         for (const n of getNeighbors(cur.x, cur.y)) {
@@ -880,9 +968,63 @@ const TacticalMap = ({
     ]
   );
 
+  const isStructureDragEnabled =
+    mode === "MAP_EDITOR" &&
+    (
+      ["bridge", "wall-line"].includes(structureDragMode) ||
+      (effectiveMapType === "square" && ["room", "building"].includes(structureDragMode))
+    );
+
+  const finishStructureDrag = useCallback(() => {
+    const drag = structureDragRef.current;
+    if (!drag) return false;
+    structureDragRef.current = null;
+    setStructureDragPreview(null);
+    onStructureDragEnd?.({
+      start: drag.start,
+      end: drag.end || drag.start,
+      mode: structureDragMode,
+    });
+    return true;
+  }, [onStructureDragEnd, structureDragMode]);
+
+  const isStructurePreviewCell = useCallback((col, row) => {
+    const preview = structureDragPreview;
+    if (!preview?.start || !preview?.end) return false;
+    const minX = Math.min(preview.start.x, preview.end.x);
+    const maxX = Math.max(preview.start.x, preview.end.x);
+    const minY = Math.min(preview.start.y, preview.end.y);
+    const maxY = Math.max(preview.start.y, preview.end.y);
+
+    if (structureDragMode === "bridge") {
+      return buildBridgeCellPath(preview.start, preview.end)
+        .some((point) => point.x === col && point.y === row);
+    }
+
+    if (structureDragMode === "wall-line" && effectiveMapType === "hex") {
+      // Orthogonal wall preview is rendered as world-axis SVG lines from the
+      // drag start cell, not as a chain of highlighted hexes.
+      return false;
+    }
+
+    if (structureDragMode === "wall-line") {
+      const dx = Math.abs(preview.end.x - preview.start.x);
+      const dy = Math.abs(preview.end.y - preview.start.y);
+      if (dx >= dy) {
+        const lineY = Math.round((preview.start.y + preview.end.y) / 2);
+        return row === lineY && col >= minX && col <= maxX;
+      }
+      const lineX = Math.round((preview.start.x + preview.end.x) / 2);
+      return col === lineX && row >= minY && row <= maxY;
+    }
+
+    return col >= minX && col <= maxX && row >= minY && row <= maxY;
+  }, [effectiveMapType, structureDragMode, structureDragPreview]);
+
   // Global pointer-up handler so dragging stops even if pointer leaves the SVG
   useEffect(() => {
     const stopPainting = () => {
+      finishStructureDrag();
       if (activeHeightStrokeRef.current) {
         console.log("ÃƒÂ¢Ã¢â‚¬ÂºÃ‚Â°ÃƒÂ¯Ã‚Â¸Ã‚Â height paint stroke ended");
       }
@@ -899,7 +1041,7 @@ const TacticalMap = ({
       window.removeEventListener("pointercancel", stopPainting);
       window.removeEventListener("blur", stopPainting);
     };
-  }, []);
+  }, [finishStructureDrag]);
 
   const handleCellPointerDown = useCallback(
     (col, row, e) => {
@@ -907,6 +1049,22 @@ const TacticalMap = ({
         // fall back to normal click behavior outside editor mode
         return;
       }
+      if (isStructureDragEnabled) {
+        e.preventDefault();
+        e.stopPropagation();
+        const start = { x: col, y: row };
+        const drag = { start, end: start };
+        structureDragRef.current = drag;
+        setStructureDragPreview(drag);
+        onStructureDragStart?.({ ...drag, mode: structureDragMode });
+        return;
+      }
+
+      if (editorBrushMode === "select" || editorBrushMode === "disabled") {
+        // Selection/prop tools must never paint terrain or elevation.
+        return;
+      }
+      onEditorMutationBegin?.("2D brush stroke");
       e.preventDefault();
       e.stopPropagation();
 
@@ -920,7 +1078,7 @@ const TacticalMap = ({
       lastPaintedCellKeyRef.current = null;
       paintedHeightHexesThisStrokeRef.current.clear();
       console.log(`ÃƒÂ°Ã…Â¸Ã¢â‚¬â€œÃ…â€™ÃƒÂ¯Ã‚Â¸Ã‚Â map brush radius: ${brushRadius}`);
-      if (editorBrushMode === "raise" || editorBrushMode === "lower") {
+      if (editorBrushMode === "raise" || editorBrushMode === "lower" || editorBrushMode === "flatten") {
         activeHeightStrokeRef.current = true;
         console.log("ÃƒÂ¢Ã¢â‚¬ÂºÃ‚Â°ÃƒÂ¯Ã‚Â¸Ã‚Â height paint stroke started");
       } else {
@@ -930,12 +1088,41 @@ const TacticalMap = ({
       lastPaintedCellKeyRef.current = key;
       applyMapEditorBrushEdit(col, row);
     },
-    [applyMapEditorBrushEdit, brushRadius, editorBrushMode, floodFillTerrain, mapDefinition, mode]
+    [
+      applyMapEditorBrushEdit,
+      brushRadius,
+      editorBrushMode,
+      floodFillTerrain,
+      isStructureDragEnabled,
+      mapDefinition,
+      mode,
+      onEditorMutationBegin,
+      onStructureDragStart,
+      structureDragMode,
+    ]
   );
 
   const handleCellPointerOver = useCallback(
     (col, row, e) => {
       if (mode !== "MAP_EDITOR" || !mapDefinition) return;
+
+      if (isStructureDragEnabled && structureDragRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        const next = {
+          ...structureDragRef.current,
+          end: { x: col, y: row },
+        };
+        structureDragRef.current = next;
+        setStructureDragPreview(next);
+        onStructureDragPreview?.({
+          ...next,
+          mode: structureDragMode,
+        });
+        return;
+      }
+
+      if (editorBrushMode === "select" || editorBrushMode === "disabled") return;
       if (!isPointerPaintingRef.current) return;
       e.preventDefault();
       e.stopPropagation();
@@ -944,10 +1131,19 @@ const TacticalMap = ({
       lastPaintedCellKeyRef.current = key;
       applyMapEditorBrushEdit(col, row);
     },
-    [applyMapEditorBrushEdit, mapDefinition, mode]
+    [
+      applyMapEditorBrushEdit,
+      editorBrushMode,
+      isStructureDragEnabled,
+      mapDefinition,
+      mode,
+      onStructureDragPreview,
+      structureDragMode,
+    ]
   );
 
   const handleCellPointerUp = useCallback(() => {
+    if (finishStructureDrag()) return;
     if (activeHeightStrokeRef.current) {
       console.log("ÃƒÂ¢Ã¢â‚¬ÂºÃ‚Â°ÃƒÂ¯Ã‚Â¸Ã‚Â height paint stroke ended");
     }
@@ -955,7 +1151,7 @@ const TacticalMap = ({
     lastPaintedCellKeyRef.current = null;
     activeHeightStrokeRef.current = false;
     paintedHeightHexesThisStrokeRef.current.clear();
-  }, []);
+  }, [finishStructureDrag]);
 
   // Memoize combatants at position to avoid recalculating on every render
   // Keyed by "x,y" coordinates for efficient lookup
@@ -2188,22 +2384,235 @@ const TacticalMap = ({
               )}
             </Tooltip>
 
-            {hasSculptedHeight && (
-              <text
-                x={centerX}
-                y={centerY + 4}
-                textAnchor="middle"
-                fontSize="10"
-                fontWeight="800"
-                fill={cellElevation < 0 ? "#075985" : "#78350f"}
-                stroke="rgba(255,255,255,0.85)"
-                strokeWidth="3"
-                paintOrder="stroke"
-                style={{ pointerEvents: "none", userSelect: "none" }}
-              >
-                {cellElevation > 0 ? `+${cellElevation}` : cellElevation}
-              </text>
+            {(() => {
+              const bridgeLayer = (Array.isArray(cellData?.verticalLayers) ? cellData.verticalLayers : [])
+                .find((layer) => layer?.type === "bridge-deck" || layer?.layer === "bridge-deck");
+              if (!bridgeLayer) return null;
+              const fill = bridgeLayer.material === "stone" ? "rgba(107,114,128,0.72)" : "rgba(120,72,32,0.76)";
+              return effectiveMapType === "square" ? (
+                <rect
+                  key={`bridge-deck-overlay-${col}-${row}`}
+                  x={x + 5}
+                  y={y + 5}
+                  width={Math.max(1, GRID_CONFIG.HEX_SIZE * 2 - 10)}
+                  height={Math.max(1, GRID_CONFIG.HEX_SIZE * 2 - 10)}
+                  fill={fill}
+                  stroke="#f8fafc"
+                  strokeWidth="1.5"
+                  style={{ pointerEvents: "none" }}
+                />
+              ) : (
+                <polygon
+                  key={`bridge-deck-overlay-${col}-${row}`}
+                  points={cellPoints}
+                  fill={fill}
+                  fillOpacity="0.72"
+                  stroke="#f8fafc"
+                  strokeWidth="1.5"
+                  style={{ pointerEvents: "none" }}
+                />
+              );
+            })()}
+
+            {getGridStructureDirections(effectiveMapType).map((directionInfo) => {
+              const direction = directionInfo.key;
+              const edge = getGridCellStructureEdge(cellData, direction, effectiveMapType);
+              if (!edge) return null;
+              if (!shouldRenderGridStructureEdge({
+                mapType: effectiveMapType,
+                direction,
+                x: col,
+                y: row,
+                grid: mapDefinition?.grid || [],
+              })) return null;
+
+              const style = getGridStructure2DStyle(edge, effectiveMapType);
+              if (!style) return null;
+
+              let coordinates = null;
+              if (effectiveMapType === "square") {
+                const sizePx = GRID_CONFIG.HEX_SIZE * 2;
+                coordinates = direction === "N"
+                  ? { x1: x, y1: y, x2: x + sizePx, y2: y }
+                  : direction === "E"
+                    ? { x1: x + sizePx, y1: y, x2: x + sizePx, y2: y + sizePx }
+                    : direction === "S"
+                      ? { x1: x, y1: y + sizePx, x2: x + sizePx, y2: y + sizePx }
+                      : { x1: x, y1: y, x2: x, y2: y + sizePx };
+              } else {
+                const points = hexPoints(centerX, centerY);
+                const edgePointIndices = {
+                  E: [5, 0],
+                  SE: [0, 1],
+                  SW: [1, 2],
+                  W: [2, 3],
+                  NW: [3, 4],
+                  NE: [4, 5],
+                };
+                const pair = edgePointIndices[direction];
+                if (pair) {
+                  coordinates = {
+                    x1: points[pair[0]][0],
+                    y1: points[pair[0]][1],
+                    x2: points[pair[1]][0],
+                    y2: points[pair[1]][1],
+                  };
+                }
+              }
+
+              if (!coordinates) return null;
+              return (
+                <line
+                  key={`grid-structure-edge-${col}-${row}-${direction}`}
+                  {...coordinates}
+                  stroke={style.stroke}
+                  strokeWidth={style.strokeWidth}
+                  strokeDasharray={style.strokeDasharray || undefined}
+                  strokeLinecap="round"
+                  style={{ pointerEvents: "none" }}
+                />
+              );
+            })}
+
+            {effectiveMapType === "hex" && getCellOrthogonalStructureSegments(cellData).map((segment) => {
+              const line = orthogonalStructureSegmentToOwnerSvgLine({
+                segment,
+                ownerCell: { x: col, y: row },
+                mapType: "hex",
+                ownerCenterX: centerX,
+                ownerCenterY: centerY,
+                hexSize: HEX_RADIUS,
+                step: mapDefinition?.structures?.orthogonal?.latticeStep || 1,
+              });
+              const style = getOrthogonalStructure2DStyle(segment);
+              if (!line || !style) return null;
+              return (
+                <line
+                  key={"orthogonal-structure-segment-" + (segment.id || segment.runId || (col + "-" + row))}
+                  {...line}
+                  stroke={style.stroke}
+                  strokeWidth={style.strokeWidth}
+                  strokeDasharray={style.strokeDasharray || undefined}
+                  strokeLinecap="square"
+                  strokeLinejoin="miter"
+                  style={{ pointerEvents: "none" }}
+                />
+              );
+            })}
+
+            {effectiveMapType === "hex" && structureDragMode === "wall-line" &&
+              structureDragPreview?.start?.x === col && structureDragPreview?.start?.y === row && (() => {
+                const route = buildOrthogonalHexStructurePreview({
+                  startCell: structureDragPreview.start,
+                  endCell: structureDragPreview.end,
+                  cornerMode: "horizontal-first",
+                  step: 1,
+                });
+                if (!route.accepted) return null;
+                return route.segments.map((segment, index) => {
+                  const line = orthogonalStructureSegmentToOwnerSvgLine({
+                    segment,
+                    ownerCell: structureDragPreview.start,
+                    mapType: "hex",
+                    ownerCenterX: centerX,
+                    ownerCenterY: centerY,
+                    hexSize: HEX_RADIUS,
+                  });
+                  return line ? (
+                    <line
+                      key={"orthogonal-wall-preview-" + index}
+                      {...line}
+                      stroke="#2563eb"
+                      strokeWidth="6"
+                      strokeDasharray="8 5"
+                      strokeLinecap="square"
+                      style={{ pointerEvents: "none" }}
+                    />
+                  ) : null;
+                });
+              })()}
+
+            {isStructurePreviewCell(col, row) && (
+              effectiveMapType === "square" ? (
+                <rect
+                  key={`structure-drag-preview-${col}-${row}`}
+                  x={x + 3}
+                  y={y + 3}
+                  width={Math.max(1, GRID_CONFIG.HEX_SIZE * 2 - 6)}
+                  height={Math.max(1, GRID_CONFIG.HEX_SIZE * 2 - 6)}
+                  fill={structureDragMode === "building" ? "rgba(124,58,237,0.24)" : structureDragMode === "bridge" ? "rgba(8,145,178,0.30)" : "rgba(37,99,235,0.20)"}
+                  stroke={structureDragMode === "building" ? "#7c3aed" : structureDragMode === "bridge" ? "#0891b2" : "#2563eb"}
+                  strokeWidth="2"
+                  strokeDasharray={["wall-line", "bridge"].includes(structureDragMode) ? "5 3" : undefined}
+                  style={{ pointerEvents: "none" }}
+                />
+              ) : ["bridge", "wall-line"].includes(structureDragMode) ? (
+                <polygon
+                  key={`grid-structure-drag-preview-${col}-${row}`}
+                  points={cellPoints}
+                  fill={structureDragMode === "bridge" ? "rgba(8,145,178,0.30)" : "rgba(37,99,235,0.24)"}
+                  stroke={structureDragMode === "bridge" ? "#0891b2" : "#2563eb"}
+                  strokeWidth="2"
+                  strokeDasharray="5 3"
+                  style={{ pointerEvents: "none" }}
+                />
+              ) : null
             )}
+
+            {mode === "MAP_EDITOR" && (() => {
+              const waterEnvironment = getWaterEnvironmentFromCell(cellData || {});
+              if (!waterEnvironment.isWater) return null;
+              const currentLabel = waterEnvironment.current?.strength === "none"
+                ? ""
+                : ` ${waterEnvironment.current?.direction || ""}`;
+              return (
+                <text
+                  key={`water-editor-label-${col}-${row}`}
+                  x={x + GRID_CONFIG.HEX_SIZE}
+                  y={y + GRID_CONFIG.HEX_SIZE + 4}
+                  textAnchor="middle"
+                  fontSize="9"
+                  fontWeight="700"
+                  fill="#e0f2fe"
+                  stroke="#075985"
+                  strokeWidth="2"
+                  paintOrder="stroke"
+                  style={{ pointerEvents: "none" }}
+                >
+                  {`${Number(waterEnvironment.depthFeet || 0).toFixed(1)}ft${currentLabel}`}
+                </text>
+              );
+            })()}
+
+            {hasSculptedHeight && (() => {
+              const badgeX = centerX + (effectiveMapType === "square" ? GRID_CONFIG.HEX_SIZE * 0.58 : GRID_CONFIG.HEX_SIZE * 0.42);
+              const badgeY = centerY - GRID_CONFIG.HEX_SIZE * 0.52;
+              const label = cellElevation > 0 ? `+${cellElevation}` : String(cellElevation);
+              return (
+                <g style={{ pointerEvents: "none", userSelect: "none" }}>
+                  <rect
+                    x={badgeX - 9}
+                    y={badgeY - 7}
+                    width="18"
+                    height="13"
+                    rx="4"
+                    fill={cellElevation < 0 ? "rgba(3,105,161,0.88)" : "rgba(120,53,15,0.88)"}
+                    stroke="rgba(255,255,255,0.9)"
+                    strokeWidth="1"
+                  />
+                  <text
+                    x={badgeX}
+                    y={badgeY + 2}
+                    textAnchor="middle"
+                    fontSize="8"
+                    fontWeight="800"
+                    fill="white"
+                  >
+                    {label}
+                  </text>
+                </g>
+              );
+            })()}
 
             {/* Movement color overlay - rendered above texture layer */}
             {movementOverlayColor && (
@@ -3241,6 +3650,12 @@ const TacticalMap = ({
     });
   }, [clampZoomScale, svgDimensions.height, svgDimensions.width]);
 
+  useEffect(() => {
+    if (!autoFit) return undefined;
+    const frame = requestAnimationFrame(() => fitMapToViewport());
+    return () => cancelAnimationFrame(frame);
+  }, [autoFit, fitMapToViewport, effectiveMapType, terrain?.grid?.length, terrain?.grid?.[0]?.length, mapHeight]);
+
   return (
     <Box position="relative" width="100%" height={`${mapHeight}px`} display="flex" flexDirection="column" minHeight={`${mapHeight}px`}>
       {/* Map Content Area - Resizable */}
@@ -3304,7 +3719,7 @@ const TacticalMap = ({
           scrollbarColor: '#4a5568 #e2e8f0',
         }}
       >
-        {mode === "COMBAT" && (
+        {(showMapControls ?? mode === "COMBAT") && (
           <HStack
             position="sticky"
             top="8px"
@@ -3708,7 +4123,7 @@ const TacticalMap = ({
             {/* === End Path Preview Overlay === */}
 
             {/* MAP_EDITOR mode: Editor overlay */}
-            {mode === "MAP_EDITOR" && mapDefinition && (
+            {mode === "MAP_EDITOR" && mapDefinition && showEditorOverlay && (
               <g id="map-editor-overlay">
                 <foreignObject x={12} y={12} width={180} height={300}>
                   <div
@@ -4100,6 +4515,18 @@ TacticalMap.propTypes = {
   brushRadius: PropTypes.number,
   onSelectedTerrainTypeChange: PropTypes.func,
   onMapCellEdit: PropTypes.func,
+  editorBrushMode: PropTypes.oneOf(["terrain", "bucket", "raise", "lower", "flatten", "select", "disabled"]),
+  editorHeightStep: PropTypes.number,
+  editorFlattenHeight: PropTypes.number,
+  waterPaintConfig: PropTypes.object,
+  structureDragMode: PropTypes.oneOf(["edge", "room", "wall-line", "building", "bridge"]),
+  onStructureDragStart: PropTypes.func,
+  onStructureDragPreview: PropTypes.func,
+  onStructureDragEnd: PropTypes.func,
+  onEditorMutationBegin: PropTypes.func,
+  showEditorOverlay: PropTypes.bool,
+  showMapControls: PropTypes.bool,
+  autoFit: PropTypes.bool,
 };
 
 export default TacticalMap;

@@ -54,8 +54,10 @@ const HexArena3D = forwardRef(function HexArena3D(
   const initializationStarted = useRef(false);
   const isMountedRef = useRef(true);
   const playedWeaponAnimationCueIdsRef = useRef(new Set());
+  const viewportSyncRafRef = useRef(null);
+  const viewportSyncRaf2Ref = useRef(null);
 
-  // Ã¢Å“â€¦ Expose a tiny API to parent (CombatPage)
+  // Expose a tiny API to parent (CombatPage / Map Maker).
   useImperativeHandle(ref, () => ({
     syncMapEditorState: (terrainDef, changedCells = null) => {
       arenaRef.current?.syncMapEditorState?.(terrainDef, changedCells);
@@ -80,7 +82,10 @@ const HexArena3D = forwardRef(function HexArena3D(
     },
   }));
 
-  // Create arena ONCE
+  // Create the arena once per mount. Map Maker can mount this component only
+  // after the user switches from 2D to 3D, so the first layout frame may not
+  // have final container dimensions yet. A later viewport-sync effect handles
+  // renderer sizing once the container has a real width and height.
   useEffect(() => {
     if (!containerRef.current || initializationStarted.current) return;
     initializationStarted.current = true;
@@ -91,8 +96,8 @@ const HexArena3D = forwardRef(function HexArena3D(
 
       if (!arenaRef.current) {
         console.error("Failed to initialize 3D arena");
-      } else {
-        if (isMountedRef.current) setIsInitialized(true);
+      } else if (isMountedRef.current) {
+        setIsInitialized(true);
       }
     } catch (error) {
       console.error("Error initializing 3D arena:", error);
@@ -100,9 +105,90 @@ const HexArena3D = forwardRef(function HexArena3D(
 
     return () => {
       isMountedRef.current = false;
-      // arenaRef.current?.dfocusose();
+      if (viewportSyncRafRef.current) cancelAnimationFrame(viewportSyncRafRef.current);
+      if (viewportSyncRaf2Ref.current) cancelAnimationFrame(viewportSyncRaf2Ref.current);
+      viewportSyncRafRef.current = null;
+      viewportSyncRaf2Ref.current = null;
+      // HexArena's legacy teardown is intentionally not forced here because
+      // existing combat code owns its lifecycle. The resize observer below is
+      // always disconnected by its own cleanup.
     };
   }, []);
+
+  // Keep Three.js sized to the component, not only to the browser window.
+  // The legacy arena listens for window resize, but Map Maker now mounts 3D
+  // conditionally inside a CSS grid. ResizeObserver bridges those container
+  // changes into the arena's existing resize handler. Two animation frames are
+  // used on first reveal so CSS Grid/Flexbox can finish resolving dimensions.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !arenaRef.current || !isInitialized || !visible) return undefined;
+
+    let observer = null;
+    let lastWidth = -1;
+    let lastHeight = -1;
+
+    const syncViewport = ({ forceTerrainSync = false } = {}) => {
+      if (!containerRef.current || !arenaRef.current) return;
+      const width = containerRef.current.clientWidth;
+      const height = containerRef.current.clientHeight;
+      if (width < 2 || height < 2) return;
+
+      // HexArena already owns the renderer/camera resize function and registers
+      // it on window.resize. Dispatching here reuses that canonical path.
+      window.dispatchEvent(new Event("resize"));
+
+      if (forceTerrainSync && mode === "MAP_EDITOR") {
+        arenaRef.current.syncMapEditorState?.(mapDefinition);
+        arenaRef.current.syncEditorProps?.(editorProps || [], {
+          selectedPropId: selectedEditorPropId,
+        });
+      }
+    };
+
+    const scheduleInitialSync = () => {
+      if (viewportSyncRafRef.current) cancelAnimationFrame(viewportSyncRafRef.current);
+      if (viewportSyncRaf2Ref.current) cancelAnimationFrame(viewportSyncRaf2Ref.current);
+      viewportSyncRafRef.current = requestAnimationFrame(() => {
+        viewportSyncRafRef.current = null;
+        viewportSyncRaf2Ref.current = requestAnimationFrame(() => {
+          viewportSyncRaf2Ref.current = null;
+          syncViewport({ forceTerrainSync: true });
+        });
+      });
+    };
+
+    scheduleInitialSync();
+
+    if (typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver((entries) => {
+        const rect = entries?.[0]?.contentRect;
+        const width = Math.round(rect?.width || container.clientWidth || 0);
+        const height = Math.round(rect?.height || container.clientHeight || 0);
+        if (width < 2 || height < 2) return;
+        if (width === lastWidth && height === lastHeight) return;
+        lastWidth = width;
+        lastHeight = height;
+        syncViewport();
+      });
+      observer.observe(container);
+    }
+
+    return () => {
+      observer?.disconnect?.();
+      if (viewportSyncRafRef.current) cancelAnimationFrame(viewportSyncRafRef.current);
+      if (viewportSyncRaf2Ref.current) cancelAnimationFrame(viewportSyncRaf2Ref.current);
+      viewportSyncRafRef.current = null;
+      viewportSyncRaf2Ref.current = null;
+    };
+  }, [
+    isInitialized,
+    visible,
+    mode,
+    mapDefinition,
+    editorProps,
+    selectedEditorPropId,
+  ]);
 
   // Sync based on mode (fallback full-sync if parent isn't pushing diffs)
   useEffect(() => {
