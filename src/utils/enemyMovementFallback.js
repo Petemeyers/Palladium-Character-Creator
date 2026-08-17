@@ -386,11 +386,26 @@ export function executeEnemyMovementPlan(plan, {
     if (plan.type === "hold" || !plan.position) {
       hold?.(plan);
     } else {
-      move?.(plan.position, plan);
+      const moveResult = move?.(plan.position, plan);
+      const movementAccepted = moveResult !== false && !(
+        moveResult && typeof moveResult === "object" && moveResult.accepted === false
+      );
+      if (!movementAccepted) {
+        spendAction?.(plan);
+        actionSpent = true;
+        executionResult = {
+          executed: false,
+          committed: true,
+          actionSpent: true,
+          movementAccepted: false,
+          reason: "movement-commit-rejected",
+        };
+        return executionResult;
+      }
     }
     spendAction?.(plan);
     actionSpent = true;
-    executionResult = { executed: true, committed: true, reason: plan.type };
+    executionResult = { executed: true, committed: true, movementAccepted: true, reason: plan.type };
     return executionResult;
   } catch (error) {
     if (committed && !actionSpent) {
